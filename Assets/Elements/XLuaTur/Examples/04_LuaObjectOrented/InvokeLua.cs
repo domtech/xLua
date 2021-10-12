@@ -10,6 +10,7 @@ using System;
 using UnityEngine;
 using XLua;
 using Game.Lua;
+using System.IO;
 
 namespace XLuaTest
 {
@@ -21,7 +22,6 @@ namespace XLuaTest
 
     public class InvokeLua : MonoBehaviour
     {
-        [CSharpCallLua]
         public interface ICalc
         {
             event EventHandler<PropertyChangedEventArgs> PropertyChanged;
@@ -32,7 +32,6 @@ namespace XLuaTest
             object this[int index] { get; set; }
         }
 
-        [CSharpCallLua]
         public delegate ICalc CalcNew(int mult, params string[] args);
         private static LuaTable sharedEnv;//= luaEnv.NewTable();    // 在多个Lua文件中共享的表,可以通过此表来通信
         private string script = @"
@@ -92,31 +91,25 @@ namespace XLuaTest
 
             LuaManager.InitLuaManager();
 
-
-            //LuaEnv luaEnv = new LuaEnv();
-            //sharedEnv = luaEnv.NewTable();    // 在多个Lua文件中共享的表,可以通过此表来通信
-
-            //var scriptEnv = luaEnv.NewTable();
-            //LuaTable meta = luaEnv.NewTable(); // 为每个脚本设置一个独立的环境，可一定程度上防止脚本间全局变量、函数冲突
-            //meta.Set("__index", luaEnv.Global);
-            //scriptEnv.SetMetaTable(meta);
-            //meta.Dispose();
-            //scriptEnv.Set("G", sharedEnv);
-
             LuaTable scriptEnv = LuaManager.Instance.NewTable();
 
-            Test(scriptEnv);//调用了带可变参数的delegate，函数结束都不会释放delegate，即使置空并调用GC
+            scriptEnv.Set("this", this);
+
+            string luaFile = "TestInvokeLua";
+
+            var loadResult = LuaManager.LoadLuaFile(in luaFile);
+            if (loadResult.luaContent == null) return;
+
+            var luaFileDebugPath = "./" + luaFile;
+            LuaManager.Instance.DoString(loadResult.luaContent, luaFileDebugPath, scriptEnv);
+            Test(scriptEnv);
             scriptEnv.Dispose();
         }
 
         void Test(LuaTable scriptEnv)
         {
-            //scriptEnv.DoString(script);
-
-            LuaManager.Instance.DoString(script);
-
             CalcNew calc_new = scriptEnv.GetInPath<CalcNew>("Calc.New");
-            //CalcNew calc_new = luaenv.Global.GetInPath<CalcNew>("Calc.New");
+
             ICalc calc = calc_new(10, "hi", "john"); //constructor
             Debug.Log("sum(*10) =" + calc.Add(1, 2));
             calc.Mult = 100;
@@ -140,10 +133,6 @@ namespace XLuaTest
             Debug.Log(string.Format("{0} has property changed {1}={2}", sender, e.name, e.value));
         }
 
-        // Update is called once per frame
-        void Update()
-        {
-
-        }
+       
     }
 }

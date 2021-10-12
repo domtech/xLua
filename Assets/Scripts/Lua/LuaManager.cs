@@ -168,13 +168,35 @@ namespace Game.Lua
 
             var luaFilePath = mCachedPathBuilder.ToString();
             var _luaPath = Path.Combine(Application.dataPath, luaFilePath);
-            //var bytes = GlobalHelper.SafeReadAllBytes(_luaPath);
-            return (null, luaFilePath);
+            var bytes = SafeReadAllBytes(_luaPath);
+            return (bytes, luaFilePath);
 #else
             return (null,"");
 #endif
         }
+        public byte[] SafeReadAllBytes(string inFile)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(inFile))
+                {
+                    return null;
+                }
 
+                if (!File.Exists(inFile))
+                {
+                    return null;
+                }
+
+                File.SetAttributes(inFile, FileAttributes.Normal);
+                return File.ReadAllBytes(inFile);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError(string.Format("SafeReadAllBytes failed! path = {0} with err = {1}", inFile, ex.Message));
+                return null;
+            }
+        }
         private void Awake()
         {
             Debug.Assert(Instance == null);
