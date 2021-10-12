@@ -1,0 +1,64 @@
+---付费奖励相关掉落图标
+
+--设置item需要的数据
+---@type RewardObject
+local tData
+
+--当前item对象
+---@type BaseScriptItemRendererViewForLua
+local tRender
+
+--将GameObject类型转为ItemSpriteDisply
+---@type ItemSpriteDisply
+local _itemDisplay
+
+--c#类本地化
+local RewardViewUtils = CS.RewardViewUtils
+
+--返回item数据
+function GetData()
+    return tData
+end
+
+--保存item数据
+---@param data RewardObject
+function SetData(data)
+    tData = data
+    Refresh()
+end
+
+--刷新item
+function Refresh()
+    if nil ~= tData then
+        tRender.viewObject:SetActive(true)
+        Render(tData)
+    else
+        tRender.viewObject:SetActive(false)
+    end
+end
+
+function Render(data)
+    RewardViewUtils.SetRewardForLua(data, _itemDisplay, iconBg, countLab, nameLab)
+end
+
+--创建完item回调
+---@param data BaseScriptItemRenderViewForLua
+function OnPostCreateRender(data)
+    tRender = data
+    _itemDisplay = CS.ItemSpriteDisply(iconDisplay)
+end
+
+function OnDestroy()
+    if _itemDisplay ~=nil then
+        -- body
+        _itemDisplay:Dispose()
+        _itemDisplay = nil
+    end
+    if tRender~=nil then
+        -- body
+        tRender:Dispose()
+        tRender = nil
+    end
+    
+    
+end

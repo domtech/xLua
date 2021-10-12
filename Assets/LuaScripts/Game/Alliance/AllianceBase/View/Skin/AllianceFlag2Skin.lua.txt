@@ -1,0 +1,40 @@
+
+--C#
+local NGUIParticleAsyncPrefab = CS.NGUIParticleAsyncPrefab;
+local AllianceFlagInfo = CS.AllianceFlagInfo;
+
+---图标上特效
+local asyncFlagParticle;
+
+---播放特效
+function StartParticle()
+    asyncFlagParticle = NGUIParticleAsyncPrefab(icon.gameObject.transform, 4);
+    asyncFlagParticle.path = "Effects/UI/ui_lianmengjiemian";
+end
+
+---释放
+function Dispose()
+    if asyncFlagParticle ~= nil then
+        asyncFlagParticle.Dispose();
+        asyncFlagParticle = nil;
+    end
+end
+
+---设置联盟图标
+---@param bgIndex int 背景图片下标
+---@param designIndex int 图标图片下标
+function SetFlag(bgIndex, designIndex)
+    if designIndex >= 0 and designIndex < AllianceFlagInfo.flagIcon.Count then
+        icon.spriteName = AllianceFlagInfo.flagIcon[designIndex];
+    end
+    if bgIndex >= 0 and bgIndex < AllianceFlagInfo.flagBg.count then
+        iconBg.spriteName = AllianceFlagInfo.flagBg[bgIndex];
+    end
+end
+
+---设置联盟图标
+---@param flag AllianceFlagInfo 联盟图标信息
+function SetFlag(flag)
+    icon.spriteName = flag.badge;
+    iconBg.spriteName = flag.bannerStyle;
+end

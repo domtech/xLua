@@ -1,0 +1,9 @@
+
+function OnStructure()
+    mediator:PrintTest();
+    mediator:RegisterNotificationHandler(CS.NotificationConst.ON_UPDATE_PAY_BOX_SUCCESS, "OnTest", true)
+end
+
+function OnTest()
+    gameObject.text = "222222222222222";
+end

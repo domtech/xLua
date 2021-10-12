@@ -1,0 +1,274 @@
+
+local _itemFactory  -- 保存itemRender的工厂
+local NotificationConst = CS.NotificationConst
+local UIEventListener = CS.UIEventListener
+local Language = CS.Language
+local ProxyHelper = CS.ProxyHelper
+local EventDelegate = CS.EventDelegate
+local NotificationConstLua = require('Game/Common/Const/NotificationConst')
+local RankMeta = CS.RankMeta
+local StringUtil = CS.StringUtil
+
+---一页最多有10条数据
+local ONE_PAGE_MAX_COUNT = 10
+
+local REFRESH_Y_OFFSET = 250
+
+---@type BaseUIMediatorForLua
+local _mediatorOwner -- 保存对应的Mediator
+
+---@type ScrollView
+local _scrollView    -- 当前滚动列表
+---@type UIPanel
+local _scrollPanel   -- 当前滚动列表面板
+
+---@type number 
+local _currentPage = 0     -- 保存当前第几页
+
+---@type boolean
+local _hasMoreInfo = true  -- 是否还有更多数据
+
+---@type number
+local _lastListCount = 0   -- 上次列表数据条目数量
+
+
+
+---@type number
+local _refreshYPosition
+
+--@type string
+--purpose : 记录排行榜类型
+local rankType
+
+--@type WebTexture
+local headWebTexture
+
+
+-- 同 MonoBehaviour.Start() 函数
+function OnStart()
+        _itemFactory = CS.ItemRendererFactory(
+            function(itemGameObject)
+                local itemRender = CS.BaseScriptItemRendererViewForLua(itemGameObject);
+                return itemRender;  -- 返回创建的 ItemRender
+            end
+        );
+
+        grid.itemFactory = _itemFactory;
+        --grid:onItemEvent('+', OnGetItemEvent)
+        grid:onScrollViewDrag('+', OnDrag)
+
+        _scrollView = grid.scrollView;
+        _scrollView.onDragFinished = OnDragFininshed
+
+        _scrollPanel = _scrollView.panel
+
+        --title.text = Language.GetContent("ranking021")
+        topic1.text = Language.GetContent("alliance060")
+        topic2.text = Language.GetContent("ranking029")
+        topic3.text = Language.GetContent("ranking023")
+
+        
+        headWebTexture = CS.WebTexture(headTexture)
+     
+end
+
+--更新个人信息
+function OnUpdateSelfRankInfo (data) 
+
+
+    if data.Rank == 1 then
+        indexBackSprite.gameObject:SetActive(true)
+        indexBackSprite.spriteName = "Icon_ranking_01"
+       
+    elseif data.Rank == 2 then
+        indexBackSprite.gameObject:SetActive(true)
+        indexBackSprite.spriteName = "Icon_ranking_02"
+    
+    elseif data.Rank == 3 then
+        indexBackSprite.gameObject:SetActive(true)
+        indexBackSprite.spriteName = "Icon_ranking_03"
+     
+    else
+        indexBackSprite.gameObject:SetActive(false)
+    end
+
+    topic3.text = data.TitleName
+    CS.PlayerInfoUtil.SetHeadToWebTexture(headWebTexture, data.HeadAddr);
+    title.text = data.UserName--玩家姓名
+    --descrip.text = data.AllianceName--玩家联盟
+
+    if data.AllianceName == nil or data.AllianceName == "" then
+        descrip.text = Language.GetContent("resourceInfo006")
+    else
+        descrip.text = data.AllianceName
+    end
+
+    num.text = tostring(data.KillNum)--玩家击杀敌军数量
+
+    if data.Rank == 0 then
+        index.text = "200+"
+    else
+        index.text = tostring(data.Rank)--玩家排名
+    end
+
+ 
+    
+end
+
+--列表的拖拽结束
+function OnDragFininshed()
+    if not _hasMoreInfo then
+        return
+    end
+
+    if _scrollView.transform.localPosition.y >= _refreshYPosition then
+        LoadMoreList(_currentPage + 1)
+    end
+end
+
+
+--- 创建完视图后立即调用
+---@param mediatorOwner PayBaseMediatorForLua
+---@param data object
+function OnPostCreateView( mediatorOwner, data )
+    _mediatorOwner = mediatorOwner;
+    print("data: "..data)
+    rankType = data;
+end
+
+--- 由C#调用,刷新数据显示
+---@param data object
+function OnShowViewAndRefresh(data)
+    --print("OnShowViewAndRefresh")
+    rankType = data;
+   
+    ResetPage()
+    LoadMoreList(_currentPage+1)
+end
+
+--- 由C#调用
+function OnGetParamDic(data)
+    rankType = data;
+    local Dic_Uint_Obj = CS.System.Collections.Generic.Dictionary(CS.System.UInt32, CS.System.Object);
+    local dic = Dic_Uint_Obj();
+    local topic
+    if rankType == "4" then
+        topic = Language.GetContent("ranking023")
+    elseif rankType == "5" then
+        topic = Language.GetContent("ranking024")
+    elseif rankType == "6" then
+        topic = Language.GetContent("ranking025")
+    elseif rankType == "16" then
+        topic = Language.GetContent("ranking027")
+    elseif rankType == "17" then
+        topic = Language.GetContent("ranking026")
+    end
+
+    local style = CS.PanelBgStyle(topic);
+    dic:Add(CS.PopupMode.ADD_RESOURCE_BAR_BG, style)
+    return dic;
+end
+
+--向服务器发送数据申请 
+function LoadMoreList(page)
+    --请求排行榜数据
+    ProxyHelper.playerRankingProxy:ApplyRankingListData(rankType, page)
+  
+end
+
+--接收到服务器返回的玩家排行榜类别列表，
+--说明：具体类别个数由策划表决定，每一个类别里面的排行数据由服务器决定，这个接口传回的data是每一个类别
+--对应的个人排行的具体排行数据 
+function OnUpdatePlayerRankingListContent ()
+    print("PlayerRankingListMediator::OnUpdatePlayerRankingListContent")
+     
+
+    local inviteMemberList = ProxyHelper.playerRankingProxy:GetPlayerRankingContentList()
+    
+    RenderPlayerRankingTypeList(inviteMemberList)
+
+    if inviteMemberList ~= nul and inviteMemberList.Count - _lastListCount < ONE_PAGE_MAX_COUNT then
+        _hasMoreInfo = false
+    else
+        _hasMoreInfo = true
+    end
+
+    if _lastListCount == 0 then
+        _scrollView:ResetPosition()
+    end
+    if inviteMemberList ~= nul then
+        _lastListCount = inviteMemberList.Count
+    end
+
+end
+
+function RenderPlayerRankingTypeList(list)
+    grid.data = list
+    grid:Reposition()
+    local itemCount = list.Count
+    _refreshYPosition = CalculateRefreshY(itemCount)
+    --hintLbl.gameObject:SetActive(itemCount >= ONE_PAGE_MAX_COUNT)
+end
+
+function CalculateRefreshY(itemCount)
+    local contentHeight = 142 * itemCount
+
+    local clippingSizeY = _scrollPanel.baseClipRegion.w
+    if contentHeight < clippingSizeY then
+        return REFRESH_Y_OFFSET
+    else
+        return contentHeight - clippingSizeY + REFRESH_Y_OFFSET
+    end
+end
+
+--重置数据
+function ResetPage ()
+    _currentPage = 0
+    _hasMoreInfo = true
+    _lastListCount = 0
+    grid.data = nil
+    ProxyHelper.playerRankingProxy:ClearPlayerRankingListContent()   --清空排行榜数据 
+    _scrollView:ResetPosition()
+end
+
+--列表的拖拽
+function OnDrag(data)
+    --RefreshHintLabel()
+end
+
+--- 由C#调用
+function OnGetPopupMode()
+    return CS.PopupMode.ADD_RESOURCE_BAR_BG | CS.PopupMode.ANIMATED;
+end
+
+-- 同 MonoBehaviour.OnDestroy() 函数
+function OnDestroy()
+    _scrollView.onDragFinished = nil
+    --grid:onItemEvent('-', OnGetItemEvent);
+   _itemFactory:Dispose();    -- 释放占用的资源
+   _itemFactory = nil;
+
+   if headWebTexture~=nil then
+        -- body
+        headWebTexture:Dispose()
+        headWebTexture = nil
+    end
+end
+
+function OnDisable()
+    -- ResetPage()
+    grid.data = nil
+end
+
+-- function OnEnable()
+--     ResetPage()
+-- end
+--- 处理Item的事件
+---@param render IItemRenderer
+---@param eventname string
+---@param param object
+-- function OnGetItemEvent(render, eventname, param)
+--     if eventname == "Press" then
+--         print("OnGetItemEvent press event")
+--     end
+-- end

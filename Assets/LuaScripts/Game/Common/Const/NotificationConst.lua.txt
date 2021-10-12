@@ -1,0 +1,66 @@
+return {
+
+    ------- Map_Login Scene UI Begin ----------
+    SHOW_UISCENE_LOGIN = 'Show_UIScene_Login',
+    -------- Map_Login Scene UI  End ----------
+
+    ------- Worker Begin ----------
+    REFRESH_WORKER_QUEUE = 'RefreshWorkerQueue',
+    ON_BUY_GIFT_SUCCESS = "BuyGiftSuccess",
+    -------- Worker End ----------
+
+    -------vip----------
+    ON_UPDATE_VIP_REWARD_INFO = "UpdateVipRewardInfo",
+    -------- vip ----------
+    -------- Dragon Begin --------
+    UPDATE_DRAGON_EXPLORE_LIST = "UpdateDragonExploreList",
+    -------- Dragon End --------
+    ON_GET_SEARCH_INFO = "OnGetSearchInfo",
+    ON_GET_SEARCH_RESULT = "OnGetSearchResult",
+
+    --移动摄像机位置
+    MOVE_CAMERA_TO_POSITION = "MoveCameraToPosition",
+    SHOW_SEARCH_RESULT_ARROW = "SHOW_SEARCH_RESULT_ARROW",
+    
+    --显示提示
+    SHOW_NOTICE = "ShowNotice",
+    --显示滚动提示
+    SHOW_SCROLLING_NOTICE = "ShowScrollingNotice",
+    --取消滚提示
+    CANCEL_SCROLLING_NOTICE = "CancelScrollingNotice",
+    ---显示集结界面
+    SHOW_MASS_TIME_PANEL = "SHOW_MASS_TIME_PANEL",
+    ---集结队伍详细信息界面
+    SHOW_MASS_TEAM_DETAIL_INFO = "SHOW_MASS_TEAM_DETAIL_INFO",
+    ---显示集结队伍成员详细信息
+    ON_SHOW_MASS_MEMBER_DETAIL = "ON_SHOW_MASS_MEMBER_DETAIL",
+    ---显示集结队伍成员详细信息
+    ON_MASS_REMOVE_MEMBER = "ON_MASS_REMOVE_MEMBER",
+    ---士兵详情展开
+    ON_MAIL_DETAIL_SOLDIER_CLIKC = "ON_MAIL_DETAIL_SOLDIER_CLIKC",
+    ---士兵详情滑动
+    ON_MAIL_DETAIL_SOLDIER_DRAG = "ON_MAIL_DETAIL_SOLDIER_DRAG",
+    ---士兵详情点击
+    ON_MAIL_DETAIL_SOLDIER_PRESS = "ON_MAIL_DETAIL_SOLDIER_PRESS",
+    
+    --联盟邀请点击
+    ALLIANCE_INVITE_CLICK = "AllianceInviteClick",
+
+    --五星好评
+    GOT_RATE_REWARD = "GotRateReward",
+
+    --UI黑边遮罩
+    SHOW_UI_MOVIE_SHELTER = "SHOW_UI_MOVIE_SHELTER",
+    HIDE_UI_MOVIE_SHELTER = "HIDE_UI_MOVIE_SHELTER",
+
+    --联盟领地放置
+    ALLIANCE_TERRITORY_PUTUP = "AllianceTerritoryPutUp",
+    --联盟领地建造
+    ALLIANCE_TERRITORY_BUILD = "AllianceTerritoryBuild",
+
+    --联盟领地增援
+    SHOW_ALLIANCE_TERRITORY_REINFORE = "AllianceTerritoryReinfore",
+
+    INTEGRAL_RANK_REQUEST = "Integral_Rank_Request"
+
+}

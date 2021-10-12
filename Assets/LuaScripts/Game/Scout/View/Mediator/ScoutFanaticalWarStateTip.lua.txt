@@ -1,0 +1,186 @@
+---
+---侦查：战斗狂热提示框
+---zhaoxuefei 2019-10-19
+---
+
+local LuaNotificationConst = require('Game/Common/Const/NotificationConst');
+
+---c#
+local MathUtil = CS.MathUtil;
+local LuaUnityExtention = CS.LuaUnityExtention;--unity 扩展接口类， zhaoxuefei
+local BuffMeta = CS.BuffMeta;
+local EventDelegate = CS.EventDelegate;
+local LuaUnityExtention = CS.LuaUnityExtention;
+local UIEventListener = CS.UIEventListener;
+local NotificationConst = CS.NotificationConst;
+local MapUtils = CS.MapUtils;
+local ProxyHelper = CS.ProxyHelper;
+local AudioFacade = CS.AudioFacade;
+local AudioNameConst = CS.AudioNameConst;
+local _cmCenter = CS.NetFacade.instance;
+local Language = CS.Language;
+local Settings = CS.Settings;
+local Protocol = CS.Doomsday.Protocol;
+local Constant = Protocol.Constant
+local WebTexture = CS.WebTexture
+local myWebTexture;
+---存放当前mediator
+---@type BaseUIMediator
+local _mediator;
+
+---存放界面数据
+---@type MapCityVO
+local _cityVo;
+
+local incomingMsg;
+---界面加载完成
+function OnStart()
+    
+end
+
+---创建(先于OnStart)
+---@param mediator UIBaseMediator
+---@param data object
+function OnPostCreateView(mediator, data)
+    _mediator = mediator
+    incomingMsg = data
+    UIEventListener.Get(scoutBtn.gameObject).onClick = OnScoutBtnClick;
+    UIEventListener.Get(gatherBtn.gameObject).onClick = OnCancelScoutBtnClick;
+    UIEventListener.Get(closeBtn.gameObject).onClick = OnCloseScoutBtnClick;
+
+    
+    EventDelegate.Add(ignoreSecondToggle.onChange, OnToggleChange);
+end
+
+---创建完成
+---@param data object
+function OnAfterCreateView(data)
+    --_mediator:RegisterNotificationHandler(NotificationConst.SHOW_SCOUT_RESULTTIP, "ShowScoutResultTip", true)
+    labelTitle.text =  Language.GetContent("vigilanceEffect25");
+    
+    local meta = BuffMeta.GetMeta("1060001")
+
+    local duration =  MathUtil.RoundToInt(meta.effectPara1 / 60)
+    local effect =  LuaUnityExtention.GetLastStringTarget(meta.RawPropertyString)
+    local effectnum =  MathUtil.RoundToInt(tonumber(effect) * 100)
+    local finaleffect = tostring(effectnum).."%"
+    labelContent.text = Language.GetContent("mailReportScout042",finaleffect ,duration)
+    scoutBtn.text = Language.GetContent("scienceUI009")
+    gatherBtn.text = Language.GetContent("public002")
+     ignoreSecondTips.text = Language.GetContent("pub005")
+    
+     
+end
+
+function OnToggleChange ()
+        local isToggled = ignoreSecondToggle.value;
+
+        if isToggled == true then
+            local curTime = os.time(os.date("!*t"));
+            LuaUnityExtention.SetInt("ScoutNoTip", curTime);
+        else
+            LuaUnityExtention.DeleteKey("ScoutNoTip")
+        end
+   
+end
+
+--收到服务器返回邮件提醒，标识已经到达侦察点，准备返程，在这个时间节点，需要弹出提示框
+-- function ShowScoutResultTip(data)
+--   --调用CS端的工具脚本对应的接口 
+--   _mediator:SendNotification(NotificationConst.SHOW_SCOUT_RESULTBUBBLE_TIP)
+
+-- end
+---隐藏
+function OnAfterHideView()
+    
+end
+
+---显示刷新
+function OnShowViewAndRefresh(data)
+   
+end
+
+---刷新界面信息
+function RefreshPanel()
+   
+
+end
+
+---设置玩家信息
+function SetName()
+   
+end
+
+---重置按钮状态
+function ResetBtnState()
+   
+end
+
+---点击集结按钮
+---@param obj object
+function OnGoInBtnClick(obj)
+   
+end
+
+---点击收藏按钮
+---@param obj object
+function OnFavoriteBtnClick(obj)
+   
+end
+
+---点击侦察按钮
+---@param obj object
+function OnScoutBtnClick(obj)
+    _cmCenter:SendMessage(incomingMsg)
+    _mediator:HideView()
+end
+
+---点击取消按钮
+---@param obj object
+function OnCancelScoutBtnClick(obj)
+    _mediator:HideView()
+end
+
+
+---点击关闭按钮
+---@param obj object
+function OnCloseScoutBtnClick(obj)
+    _mediator:HideView()
+end
+
+
+
+
+
+---点击攻击按钮
+---@param obj object
+function OnAttackBtnClick()
+    
+end
+
+---点击集结按钮
+---@param obj object
+function OnMassBtnClick(obj)
+  
+end
+
+---点击资源支援按钮
+---@param obj object
+function OnResSupportBtnClick(obj)
+end
+
+---点击支援按钮
+---@param obj object
+function OnSupportBtnClick(obj)
+end
+
+---查看其他玩家消息返回
+---@param obj GcViewOtherPlayerInfo
+function OnViewOtherPlayerInfo(obj)
+  
+end
+
+---销毁释放
+function OnDestory()
+   
+end

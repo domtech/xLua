@@ -1,0 +1,102 @@
+--- Created by FanXuehui.
+--- DateTime: 2019/10/16
+--- 联盟邀请ItemRenderer实现
+
+local UIEventListener = CS.UIEventListener
+local Language = CS.Language
+local NotificationConst = require('Game/Common/Const/NotificationConst')
+
+--设置item需要的数据
+---@type AllianceInviteMemberVO
+local tData
+
+--当前item对象
+---@type BaseScriptItemRendererViewForLua
+local tRender
+
+---@type WebTexture
+local headWebTexture
+
+--返回item数据
+function GetData()
+    return tData
+end
+
+--保存item数据
+---@param data RewardObject
+function SetData(data)
+    tData = data
+    Refresh()
+end
+
+--刷新item
+function Refresh()
+    if nil ~= tData then
+        tRender.viewObject:SetActive(true)
+        Render(tData)
+    else
+        tRender.viewObject:SetActive(false)
+    end
+end
+
+function Render(data)
+    nameLbl.text = data.name
+    CS.PlayerInfoUtil.SetHeadToWebTexture(headWebTexture, data.head);
+    powerLbl.text = CS.CommonUtil.GetResourceString(data.power);
+    killLbl.text = CS.CommonUtil.GetResourceString(data.kill);
+
+    --language
+    local languageMeta
+    if data.language == nil or data.language == '' then
+        languageMeta = CS.LanguageMeta.allLanguageFakeMeta
+    else
+        languageMeta = CS.LanguageMeta.GetMeta(data.language);
+    end
+    if languageMeta ~= nil then
+        languageLbl.text = languageMeta.name
+        countrySpr.spriteName = data.country
+    end
+
+    if data.hasInvited then
+        inviteBtn.gameObject:SetActive(false)
+        invitedLbl.text = Language.GetContent("allianceBtn013")
+    else
+        inviteBtn.gameObject:SetActive(true)
+        invitedLbl.text = ""
+    end
+end
+
+--创建完item回调
+---@param data BaseScriptItemRenderViewForLua
+function OnPostCreateRender(data)
+    tRender = data
+
+    headWebTexture = CS.WebTexture(headTexture);
+    UIEventListener.Get(inviteBtn.gameObject).onClick = OnInviteBtnClick;
+
+    inviteBtn.text = Language.GetContent("allianceBtn012")
+end
+
+--点击邀请按钮 
+---@param go gameObject
+function OnInviteBtnClick(go)
+    -- OnItemEventPost(NotificationConst.ALLIANCE_INVITE_CLICK);
+    tRender:OnItemEventPost(NotificationConst.ALLIANCE_INVITE_CLICK);
+end
+
+function OnDestroy()
+
+    UIEventListener.Get(inviteBtn.gameObject).onClick = nil;
+
+    if tRender~=nil then
+        -- body
+        tRender:Dispose()
+        tRender = nil
+    end
+
+    if headWebTexture~=nil then
+        -- body
+        headWebTexture:Dispose()
+        headWebTexture = nil
+    end
+end

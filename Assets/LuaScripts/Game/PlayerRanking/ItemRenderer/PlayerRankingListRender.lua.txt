@@ -1,0 +1,130 @@
+--- Created by zhaoxuefei
+--- DateTime: 2019/10/31
+---玩家排行榜渲染脚本
+
+local UIEventListener = CS.UIEventListener
+local Language = CS.Language
+local NotificationConst = require('Game/Common/Const/NotificationConst')
+local ProxyHelper = CS.ProxyHelper
+--设置item需要的数据
+---@type AllianceInviteMemberVO
+local tData
+
+---@type IItemRendererHost
+local host
+
+local rankKey
+--当前item对象
+---@type BaseScriptItemRendererViewForLua
+local tRender
+
+--@type WebTexture
+local headWebTexture
+
+function OnStart()
+    --UIEventListener.Get(playerRankingItemRender).onClick = OnPlayerRankingItemClick
+end
+
+function OnPlayerRankingItemClick(go)
+end
+
+--返回item数据
+function GetData()
+    return tData
+end
+
+--保存item数据
+---@param data RewardObject
+function SetData(data)
+    tData = data
+    Refresh()
+end
+
+--保存item数据
+---@param data RewardObject
+function SetHost(data)
+    host = data
+end
+
+--刷新item
+function Refresh()
+    if nil ~= tData then
+        --tRender.viewObject:SetActive(true)
+        Render(tData)
+    else
+        tRender.viewObject:SetActive(false)
+    end
+end
+
+function Render(data)
+    --排名，和击杀数量
+    --
+    --
+
+    --获取我的排名
+    local myrank =  ProxyHelper.playerRankingProxy:GetMyRank()
+
+    
+
+    if data.rank == 1 then
+        indexBackSprite.spriteName = "Icon_ranking_01"
+        bgSprite.spriteName = "bg_ranking_01"
+        ProxyHelper.playerRankingProxy:SetColor(bgSprite, 1)
+    elseif data.rank == 2 then
+        indexBackSprite.spriteName = "Icon_ranking_02"
+        bgSprite.spriteName = "bg_ranking_02"
+        ProxyHelper.playerRankingProxy:SetColor(bgSprite, 2)
+    elseif data.rank == 3 then
+        indexBackSprite.spriteName = "Icon_ranking_03"
+        bgSprite.spriteName = "bg_ranking_03"
+        ProxyHelper.playerRankingProxy:SetColor(bgSprite, 3)
+    else
+        indexBackSprite.gameObject:SetActive(false)
+        bgSprite.spriteName = "bg_common"
+        ProxyHelper.playerRankingProxy:SetColor(bgSprite, 4)
+    end
+    
+    if data.rank == myrank then
+        bgSprite.spriteName = "bg_ranking_04"
+        ProxyHelper.playerRankingProxy:SetColor(bgSprite, 1)
+    end
+
+    index.text = data.rank
+    CS.PlayerInfoUtil.SetHeadToWebTexture(headWebTexture, data.head);
+    title.text = data.name
+    if data.allianceName == nil or data.allianceName == "" then
+        descrip.text = Language.GetContent("resourceInfo006")
+    else
+        descrip.text = data.allianceName
+    end
+    
+    --
+    killNum.text =  ProxyHelper.playerRankingProxy:GetThousandCommaString(data.value)
+end
+
+
+
+--创建完item回调
+---@param data BaseScriptItemRenderViewForLua
+function OnPostCreateRender(data)
+    tRender = data
+  --  if nil == headWebTexture then
+        headWebTexture = CS.WebTexture(headTexture)
+    --end
+end
+
+function OnDestroy()
+
+    if headWebTexture~=nil then
+        -- body
+        headWebTexture:Dispose()
+        headWebTexture = nil
+    end
+    if tRender~=nil then
+        -- body
+        tRender:Dispose()
+        tRender = nil
+    end
+
+  
+end

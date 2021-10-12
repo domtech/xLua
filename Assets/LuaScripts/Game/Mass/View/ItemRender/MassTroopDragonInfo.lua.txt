@@ -1,0 +1,24 @@
+
+ local ProxyHelper = CS.ProxyHelper
+local tDragonQuality = {
+    "frame_soldier_bg_1",
+    "frame_soldier_bg_2",
+    "frame_soldier_bg_3",
+    "frame_soldier_bg_4",
+    "frame_soldier_bg_5",
+}
+
+local iconWrapper
+
+
+---外部调用设置龙信息
+---@param self self 自身(没用，但必须写)
+---@param data
+function SetDragonInfo(self, data)
+    if nil == iconWrapper then
+        iconWrapper = ProxyHelper.earlyWarnProxy:GetDragonWrappper(icon)
+    end
+    iconWrapper.spriteName = data.meta.icon;
+    level.text = data.level;
+    bG.spriteName = tDragonQuality[data.meta.quality] or "frame_soldier_bg_2";
+end

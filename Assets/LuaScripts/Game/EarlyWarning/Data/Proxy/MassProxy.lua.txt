@@ -1,0 +1,13 @@
+local MassProxy = {};
+MassProxy.name = "aaa";
+function MassProxy:OnRegister(self)
+    --self:RegisterMessageHandler(CS.Doomsday.Protocol.GcAllianceInOrOutMass.Signature, self.OnMassChange)
+end
+
+function MassProxy:OnMassChange(value)
+    --print("==========");
+    print("=========" .. value);
+    self.name = "bbb";
+end
+
+return MassProxy;

@@ -1,0 +1,96 @@
+--- 为 组合礼包选择功能 提供实现
+--- 回调函数具体见: BaseUIMediatorForLua 类的实现中对 Lua 函数的调用
+--- 注: Lua组件或脚本间共享数据可以通过 G 表,但全局变量应该少用,以防止变量污染及内存占用释放等问题
+
+--
+local _itemFactory;  -- 保存itemRender的工厂
+local CSNotificationConst = CS.NotificationConst;
+local DataCountUtils = CS.DataCountUtils;
+local ProxyHelper = CS.ProxyHelper;
+local UIEventListener = CS.UIEventListener;
+local RewardObject = CS.RewardObject;
+
+local _selIndex;  --选中序列
+---@type BaseUIMediatorForLua
+local _mediatorOwner -- 保存对应的Mediator
+
+-- 同 MonoBehaviour.Start() 函数
+function OnStart()
+    _itemFactory = CS.ItemRendererFactory(
+            function(itemGameObject)
+                local itemRender = CS.ComposeGiftItemRenderer();
+                itemRender:Replace(itemGameObject);
+                return itemRender;  -- 返回创建的 ItemRender
+            end
+    );
+
+    mGrid.itemFactory = _itemFactory;
+    mGrid:onItemEvent('+', OnGetItemEvent);
+    UIEventListener.Get(selBtn.gameObject).onClick = OnClickChoose;
+end
+
+--- 处理Item的事件
+---@param render IItemRenderer
+---@param eventname string
+---@param param object
+function OnGetItemEvent(render, eventname, param)
+    if eventname == CS.ItemRendererEventNames.CLICK then
+        local viewVo = render.data;
+        if viewVo ~= nil  then
+            _selIndex = viewVo.index;
+        end
+    end
+end
+
+--- 创建完视图后立即调用
+---@param mediatorOwner BaseUIMediatorForLua
+---@param data object
+function OnPostCreateView( mediatorOwner, data )
+    _mediatorOwner = mediatorOwner;
+
+    titleLabel.text = CS.Language.GetContent("combinationPackageName");
+    tipLabel.text = CS.Language.GetContent("combinationPackageDes");
+    selBtn.text  = CS.Language.GetContent("dragonHatch004");
+
+    -- 给BI发送打点?
+    DataCountUtils.SetEvent("VipRewardPreviewClick");
+end
+
+--- 由C#调用,刷新数据显示
+---@param data object
+function OnShowViewAndRefresh(data)
+end
+
+---C#调用，在界面展示之前回调 
+---@param data object
+function BeforeShowView(data)
+    Refresh(data);
+end
+
+--- 由C#调用
+---@param data object
+function OnShowViewNoRefresh(data)
+end
+
+--- 刷新数据显示
+---@param data object
+function Refresh(data)
+    _selIndex=data[0];
+    local gift = data[1];
+    mGrid.data = gift.meta:GetComposeViewVO();
+    mGrid.selectedIndex=_selIndex;
+end
+--点击选择确定按钮
+---@param go gameObject
+function OnClickChoose(go)
+    _mediatorOwner:SendNotification(CSNotificationConst.UPDATE_GIFTS_COMPOSE_CHOOSE, CS.XLua.Cast.Int32(_selIndex));
+    _mediatorOwner:HideView();
+end
+
+-- 同 MonoBehaviour.OnDestroy() 函数
+function OnDestroy()
+    UIEventListener.Get(selBtn.gameObject).onClick = nil;
+    mGrid:onItemEvent('-', OnGetItemEvent);
+    _itemFactory:Dispose();    -- 释放占用的资源
+    _itemFactory = nil;
+end

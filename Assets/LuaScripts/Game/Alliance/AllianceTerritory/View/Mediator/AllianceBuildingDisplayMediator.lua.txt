@@ -1,0 +1,149 @@
+---联盟建筑查看详情面板
+
+local UIEventListener = CS.UIEventListener
+local NotificationConst = CS.NotificationConst
+local AudioFacade = CS.AudioFacade
+local _cmCenter = CS.NetFacade.instance
+local Language = CS.Language
+local GameConfig = CS.GameConfig
+local CommonUtil = CS.CommonUtil
+local Constant = CS.Doomsday.Protocol.Constant
+local UIComponentUtils = CS.UIComponentUtils
+local NGUIParticleAsyncPrefab = CS.NGUIParticleAsyncPrefab
+local AllianceTerritoryProxy = CS.ProxyHelper.allianceTerritoryProxy
+
+
+local _mediator
+local _mapBuildingVO
+local _buildingMeta
+---建造结束时间
+local _buildEndTime
+---定时器
+local _updater
+---@type AsyncEtc1Texture
+local asyncBuildingIcon
+
+local asyncBuildingParticle
+
+function OnStart()
+end
+
+function OnPostCreateView(mediator, data)
+    _mediator = mediator
+    _mapBuildingVO = data
+    _buildingMeta = _mapBuildingVO.meta
+
+    UIEventListener.Get(closeBtn.gameObject).onClick = CloseSelf
+    UIEventListener.Get(infoBtn.gameObject).onPress = OnInfoBtnPress
+    UIEventListener.Get(tipsBtn.gameObject).onPress = OnTipsBtnPress
+    asyncBuildingIcon = CS.AsyncEtc1Texture(buildingTexture)
+
+    asyncBuildingParticle = NGUIParticleAsyncPrefab(effectContainer.gameObject.transform, 1)    
+end
+
+function OnShowViewAndRefresh(data)
+    _mapBuildingVO = data
+    RefreshView()
+end
+
+function OnShowViewNoRefresh(data)
+    _mapBuildingVO = data
+    RefreshView()
+end
+
+function RefreshView()
+    titleLabel.text = Language.GetContent(_buildingMeta.name)
+    descLabel.text = Language.GetContent(_buildingMeta.desc)
+    defenseValue.text = CommonUtil.GetDiamondString(_mapBuildingVO.durability).."/"..CommonUtil.GetDiamondString(_buildingMeta.defenseValue)
+    defenceSlider.value = tonumber(_mapBuildingVO.durability)/tonumber(_buildingMeta.defenseValue)
+    endTime.text = ""
+
+    if _mapBuildingVO.state == Constant.PsAllianceBuildState.BURN then
+        statusLabel.text = Language.GetContent("allyTerritory022")..": ".."[C9413E]"..Language.GetContent("allyTerritory024") 
+    elseif IsBuildBuilding() then
+        statusLabel.text = Language.GetContent("allyTerritory030")..": "        
+        if  _mapBuildingVO.endTime > GameConfig.serverTime then
+            _buildEndTime = _mapBuildingVO.endTime + 1000
+            StartTime()
+            UpdateTime()
+        else
+            endTime.text = ""
+        end
+    else
+        statusLabel.text = Language.GetContent("allyTerritory022")..": ".."[92B9E1]"..Language.GetContent("allyTerritory008")
+    end
+    asyncBuildingIcon.path = _buildingMeta.assetPreview
+    asyncBuildingParticle.path = "Effects/UI/ui_jianzhufaguang"
+end
+
+---关闭
+function CloseSelf( )
+    _mediator:HideView()
+end
+
+---点击提示
+function OnInfoBtnPress(obj,state)
+    --[[
+        infoDescContainer.gameObject:SetActive(state)
+        infoLabel.text = "这是测试数据\n这是测试数据\n这是测试数据\n这是测试数据\n这是测试数据..."
+        infoDescContainer:SetDimensions(983,infoLabel.localSize.y + 64)
+    ]]     
+end
+
+---点击提示
+function OnTipsBtnPress(obj,state)
+    --[[
+        tipsContainer.gameObject:SetActive(state)
+        tipsLabel.text = "这是测试数据\n这是测试数据\n这是测试数据\n这是测试数据\n这是测试数据..."
+        tipsContainer:SetDimensions(983,tipsLabel.localSize.y + 64)
+    ]]     
+end
+
+---是否是建造中
+function IsBuildBuilding()
+    return _mapBuildingVO.state == Constant.PsAllianceBuildState.LAY_UP or (_mapBuildingVO.state == Constant.PsAllianceBuildState.BUILDING and _mapBuildingVO.endTime > GameConfig.serverTime)
+end
+
+---开始倒计时
+function StartTime()
+    if _updater == nil then
+        _updater = CS.UpdateFacade.AddTimeLimitUpdator(1, UpdateTime)
+    end
+end
+
+---移除倒计时
+function RemoveTime()
+    if _updater ~= nil then
+        CS.UpdateFacade.RemoveLimitUpdator(_updater)
+        _updater = nil
+    end
+end
+
+---刷新倒计时
+function UpdateTime()
+    if _buildEndTime < GameConfig.serverTime then        
+        RemoveTime()
+        RefreshView()
+        return
+    end
+    local _lastRemainTime = 0
+    UIComponentUtils.GenerateTimeInfo(_buildEndTime,_lastRemainTime,endTime)  
+end
+
+function OnAfterHideView()
+    RemoveTime()
+end
+
+function OnDestory( )
+    if nil ~= asyncBuildingParticle then
+        asyncBuildingParticle:Dispose()
+        asyncBuildingParticle = nil
+    end
+    if asyncBuildingIcon ~= nil then
+        asyncBuildingIcon:Dispose()
+        asyncBuildingIcon = nil
+    end
+    UIEventListener.Get(closeBtn.gameObject).onClick = nil
+    UIEventListener.Get(infoBtn.gameObject).onPress = nil
+    UIEventListener.Get(tipsBtn.gameObject).onPress = nil
+end

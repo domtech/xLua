@@ -1,0 +1,93 @@
+
+local _mediator;
+
+--c#类本地化
+local UIEventListener = CS.UIEventListener;
+local Language = CS.Language;
+local RewardObject = CS.RewardObject;
+local RateUtils = CS.RateUtils;
+local _itemFactory = nil
+local isRequesting = false
+
+function OnStart()
+
+    _itemFactory = CS.ItemRendererFactory(
+        function(itemGameObject)
+            return CS.BaseScriptItemRendererViewForLua(itemGameObject);  -- 返回创建的 ItemRender
+        end
+    );
+    grid.itemFactory = _itemFactory;
+    UIEventListener.Get(btnHaoPing.gameObject).onClick = OnHaoPingBtnClick;
+    UIEventListener.Get(btnTuCao.gameObject).onClick = OnTuCaoBtnClick;
+    UIEventListener.Get(btnLeave.gameObject).onClick = OnLeaveBtnClick;
+    UIEventListener.Get(btnShowTo.gameObject).onClick = OnShowToBtnClick;
+end
+
+
+function OnDestroy()
+    UIEventListener.Get(btnHaoPing.gameObject).onClick = nil;
+    UIEventListener.Get(btnTuCao.gameObject).onClick = nil;
+    UIEventListener.Get(btnLeave.gameObject).onClick = nil;
+    UIEventListener.Get(btnShowTo.gameObject).onClick = nil;
+    _mediator = nil;
+    _itemFactory= nil;
+end
+
+--点击好评按钮
+---@param go object
+function OnHaoPingBtnClick(go)
+    if isRequesting then
+        return;
+    end
+    SendRateResult(1);
+    RateUtils.JumpToStoreView();
+end
+
+--点击吐槽按钮
+---@param go object
+function OnTuCaoBtnClick(go)
+    if isRequesting then
+        return;
+    end
+    SendRateResult(2);
+    RateUtils.JumpToStoreView();
+end
+
+--点击离开按钮
+---@param go object
+function OnLeaveBtnClick(go)
+    SendRateResult(0);
+    _mediator:HideView();
+end
+function SendRateResult(res)
+    isRequesting= true;
+    local reqPack = CS.Doomsday.Protocol.CgGetGoogleScoringReward(res)
+    _mediator:SendMessage(reqPack);
+    RateUtils.SendBiData(res);
+end
+
+--点击展示评价按钮
+---@param go object
+function OnShowToBtnClick(go)
+    --GameUtil.RemoveAllPopupPanels(true);
+    goLinkPre:SetActive(false);
+    goLinkTo:SetActive(true);
+end
+
+function OnPostCreateView(mediatorOwner, data)
+    _mediator = mediatorOwner;
+    local list = RateUtils.getRewardList();
+    grid.data = list
+    isRequesting = false;
+    goLinkTo:SetActive(false);
+    goLinkPre:SetActive(true);
+    --labContent.text = Language.GetContent("monsterInfo001");
+end
+
+function OnGotReward(data)
+    if data ~=nil and data then
+        RateUtils.showReward()
+    end
+    _mediator:HideView();
+    isRequesting = false;
+end

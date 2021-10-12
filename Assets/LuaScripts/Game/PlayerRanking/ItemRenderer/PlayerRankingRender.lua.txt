@@ -1,0 +1,102 @@
+--- Created by zhaoxuefei
+--- DateTime: 2019/10/31
+---玩家排行榜渲染脚本
+
+local UIEventListener = CS.UIEventListener
+local Language = CS.Language
+local NotificationConst = require('Game/Common/Const/NotificationConst')
+local ProxyHelper = CS.ProxyHelper
+local DataCountUtils = CS.DataCountUtils;
+
+--设置item需要的数据
+---@type AllianceInviteMemberVO
+local tData
+
+---@type IItemRendererHost
+local host
+
+local rankKey
+--当前item对象
+---@type BaseScriptItemRendererViewForLua
+local tRender
+
+function OnStart()
+    UIEventListener.Get(playerRankingItemRender).onClick = OnPlayerRankingItemClick
+end
+
+function OnPlayerRankingItemClick(go)
+    print("OnPlayerRankingItemClick")
+   
+    local topic
+    if rankKey == "4" then
+        topic = Language.GetContent("ranking023")
+    elseif rankKey == "5" then
+        topic = Language.GetContent("ranking024")
+    elseif rankKey == "6" then
+        topic = Language.GetContent("ranking025")
+    elseif rankKey == "16" then
+        topic = Language.GetContent("ranking027")
+    elseif rankKey == "17" then
+        topic = Language.GetContent("ranking026")
+    end
+    local paramDic = CS.GameUtil.GetCachedDcParam();
+    paramDic:SetParam("type", topic)
+    DataCountUtils.SetEvent("PlayerRanking", paramDic)
+    ProxyHelper.playerRankingProxy:OpenTheRankingList(rankKey)
+end
+
+--返回item数据
+function GetData()
+    return tData
+end
+
+--保存item数据
+---@param data RewardObject
+function SetData(data)
+    tData = data
+    Refresh()
+end
+
+--保存item数据
+---@param data RewardObject
+function SetHost(data)
+    host = data
+end
+
+--刷新item
+function Refresh()
+    if nil ~= tData then
+        tRender.viewObject:SetActive(true)
+        Render(tData)
+    else
+        tRender.viewObject:SetActive(false)
+    end
+end
+
+function Render(data)
+        icon.spriteName = data.IconName
+        title.text =  Language.GetContent(data.TitleStr)
+        rankNum.text =  Language.GetContent("ranking028")..":"..data.MyRankStr
+        rankKey = data.RankKey
+end
+
+
+
+--创建完item回调
+---@param data BaseScriptItemRenderViewForLua
+function OnPostCreateRender(data)
+    tRender = data
+end
+
+function OnDestroy()
+
+   
+
+    if tRender~=nil then
+        -- body
+        tRender:Dispose()
+        tRender = nil
+    end
+
+  
+end

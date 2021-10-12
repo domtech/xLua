@@ -1,0 +1,268 @@
+---
+---地图上点击玩家主程显示信息面板
+---lijunwei 2019-9-27
+---
+
+local LuaNotificationConst = require('Game/Common/Const/NotificationConst');
+
+---c#
+local LuaUnityExtention = CS.LuaUnityExtention;--unity 扩展接口类， zhaoxuefei
+
+local UIEventListener = CS.UIEventListener;
+local NotificationConst = CS.NotificationConst;
+local MapUtils = CS.MapUtils;
+local ProxyHelper = CS.ProxyHelper;
+local AudioFacade = CS.AudioFacade;
+local AudioNameConst = CS.AudioNameConst;
+local _cmCenter = CS.NetFacade.instance;
+local Language = CS.Language;
+local Settings = CS.Settings;
+local Protocol = CS.Doomsday.Protocol;
+local Constant = Protocol.Constant
+local WebTexture = CS.WebTexture
+local myWebTexture;
+---存放当前mediator
+---@type BaseUIMediator
+local _mediator;
+
+---存放界面数据
+---@type MapCityVO
+local _cityVo;
+local _resVo;
+
+---界面加载完成
+function OnStart()
+    _mediator:RegisterMessageHandler(Protocol.GcViewOtherPlayerInfo.Signature, "OnViewOtherPlayerInfo");
+end
+
+---创建(先于OnStart)
+---@param mediator UIBaseMediator
+---@param data object
+function OnPostCreateView(mediator, data)
+    _mediator = mediator;
+    _cityVo = data;
+
+    UIEventListener.Get(goInBtn.gameObject).onClick = OnGoInBtnClick;
+    UIEventListener.Get(favoriteBtn.gameObject).onClick = OnFavoriteBtnClick;
+    UIEventListener.Get(inverstigateBtn.gameObject).onClick = OnInverstigateBtnClick;
+    UIEventListener.Get(resSupportBtn.gameObject).onClick = OnResSupportBtnClick;
+    UIEventListener.Get(supportBtn.gameObject).onClick = OnSupportBtnClick;
+    UIEventListener.Get(massBtn.gameObject).onClick = OnMassBtnClick;
+    UIEventListener.Get(attackBtn.gameObject).onClick = OnAttackBtnClick;
+
+end
+
+---创建完成
+---@param data object
+function OnAfterCreateView(data)
+    power.nameLbl.text = Language.GetContent("scienceFeature006");
+    alliance.nameLbl.text = Language.GetContent("MainUi0003");
+    goInBtn.text = Language.GetContent("public859");
+    inverstigateBtn.text = Language.GetContent("investigate001");
+    attackBtn.text = Language.GetContent("monsterBtn001");
+    massBtn.text = Language.GetContent("mass001");
+    supportBtn.text = Language.GetContent("allianceBtn015");
+    resSupportBtn.text = Language.GetContent("allianceBtn016");
+end
+
+local scoutType = 
+{
+	None = 0,
+    City = 1,
+	Npc = 2,
+	Res = 3,
+	Boss = 4,
+	Dragon = 5,
+
+	Village = 90,
+	Cave = 91,
+	Land = 98,
+	Army = 99,
+}
+---隐藏
+function OnAfterHideView()
+    
+end
+
+---显示刷新
+function OnShowViewAndRefresh(data)
+    
+        _cityVo = data;
+        _cmCenter:SendMessage(Protocol.CgViewOtherPlayerInfo(tonumber(_cityVo.ownerId)));
+        RefreshPanel();
+   
+   
+end
+
+
+
+
+function RefreshPanel()---刷新城市界面信息
+    if _cityVo == nil then
+        return;
+    end
+    coordLbl.text = CS.UIUtil.GetCoordinateString(_cityVo.x, _cityVo.y);
+    SetName();
+    ResetBtnState();
+    local isAlliance = _cityVo.allianceQuickId and _cityVo.allianceQuickId:isEqual(CS.PlayerUserInfo.instance.allianceQuickId) or false;
+    if _cityVo.isSelf then
+        goInBtn.gameObject:SetActive(true);
+    elseif isAlliance then
+        supportBtn.gameObject:SetActive(true);
+        resSupportBtn.gameObject:SetActive(true);
+    else
+        inverstigateBtn.gameObject:SetActive(true);
+        attackBtn.gameObject:SetActive(true);
+        massBtn.gameObject:SetActive(true);
+        investigateCost.gameObject:SetActive(true);
+        
+        investigateCost.icon.spriteName = CS.GameCurrencyUtil.GetCurrencyIcon2(Settings.investigatePriceType);
+        
+        local costPrice = Settings.investigateCityBasePrice + Settings.investigateCityLevelPrice * _cityVo.level;
+        investigateCost.nameLbl.text = costPrice;
+    end
+
+end
+
+---设置玩家信息
+function SetName()
+    local ownerName = _cityVo.name;
+    local allianceName = Language.GetContent("resourceInfo006");
+    if _cityVo.allianceQuickId ~= nil then
+        allianceName = _cityVo.allianceAlias;
+        local ownerName = '[' .. allianceName ..']' .. ownerName;
+    end
+    nameLbl.text = ownerName;
+    alliance.valueLbl.text = allianceName;
+    power.valueLbl.text = "1.0K";
+
+    --头像
+    if nil == myWebTexture then
+        myWebTexture = WebTexture(headTexture)
+    end
+    CS.PlayerInfoUtil.SetHeadToWebTexture(myWebTexture, _cityVo.head);
+end
+
+---重置按钮状态
+function ResetBtnState()
+    goInBtn.gameObject:SetActive(false);
+    inverstigateBtn.gameObject:SetActive(false);
+    attackBtn.gameObject:SetActive(false);
+    massBtn.gameObject:SetActive(false);
+    supportBtn.gameObject:SetActive(false);
+    resSupportBtn.gameObject:SetActive(false);
+    investigateCost.gameObject:SetActive(false);
+end
+
+---点击集结按钮
+---@param obj object
+function OnGoInBtnClick(obj)
+    _mediator:SendNotification(NotificationConst.CHANGE_CITY_MODE,true);
+    _mediator:HideView();
+end
+
+---点击收藏按钮
+---@param obj object
+function OnFavoriteBtnClick(obj)
+    local index = MapUtils.GlobalGridPosToGlobalIndex(_cityVo.x, _cityVo.y);
+    local favoriteVO = ProxyHelper.favoriteProxy:TryGetFavoriteVO(index)
+    if favoriteVO ~= nil then
+        _mediator:SendNotification(NotificationConst.SHOW_FAVORITE_EDIT_PANEL, favoriteVO);
+    else
+        _mediator:SendNotification(NotificationConst.SHOW_MAP_FAVORITE_ADD, _cityVo)
+    end
+end
+
+---点击侦察按钮
+---@param obj object
+function OnInverstigateBtnClick(obj)
+    --LuaUnityExtention.DeleteKey("ScoutNoTip")
+    AudioFacade.PlayOnce(AudioNameConst.WORLD_Investigate);
+    local msg = Protocol.CgTroopSetout();
+    msg.TroopJobType = Constant.PsTroopJobType.SCOUT;
+    msg.TargetType = Constant.PsDataCategory.City;
+    msg.TargetId = _cityVo.ID;
+    msg.TargetX  = _cityVo.x
+    msg.TargetY = _cityVo.y
+    -- local globalX = MapUtils.WorldPosToGlobalPosX(_cityVo.fx);
+    -- local globalY = MapUtils.WorldPosToGlobalPosY(_cityVo.fy);
+        print(msg.TargetY)
+    --   -- 逻辑层需要判定用户是否有战争狂热状态
+   
+
+    -- msg.TargetX  = MapUtils.GlobalPosToBlockPosX(globalX)
+    -- msg.TargetY = MapUtils.GlobalPosToBlockPosX(globalY)
+    if ProxyHelper.buffProxy:HasScoutFanaticalState() ~= true then
+        local hasKey = LuaUnityExtention.HasKey("ScoutNoTip")
+
+        if hasKey == true then
+            local curTime = os.time(os.date("!*t"))
+            local lastTime =   LuaUnityExtention.GetInt("ScoutNoTip")
+            if curTime - lastTime > 24*60*60 then
+                _mediator:SendNotification(NotificationConst.SHOW_SCOUT_FANATICALWARSTATETIP, msg);
+            else 
+                _cmCenter:SendMessage(msg);
+            end
+        else--进入这个逻辑，表示没有弹出过战争狂热提示框 ，或者已经取消勾选，允许弹框 
+        _mediator:SendNotification(NotificationConst.SHOW_SCOUT_FANATICALWARSTATETIP, msg);
+        end
+    else
+        _cmCenter:SendMessage(msg);
+    end
+    _mediator:HideView();
+end
+
+---点击攻击按钮
+---@param obj object
+function OnAttackBtnClick()
+    local ctx = CS.ArmySetoutContext(Constant.PsTroopJobType.ATTACK, Constant.PsDataCategory.City, _cityVo.ID, _cityVo.fx, _cityVo.fy)
+    _mediator:SendNotification(NotificationConst.EXECUTE_ARMY_PROCESS, ctx);
+    _mediator:HideView();
+end
+
+---点击集结按钮
+---@param obj object
+function OnMassBtnClick(obj)
+    if CS.PlayerUserInfo.instance.allianceId == nil then
+        _mediator:SendNotification(CS.NotificationConst.SHOW_NOTICE, Language.GetContent("mass029"));
+        return;
+    end
+    --有没有联盟大厅
+    if not ProxyHelper.mapProxy.selfCity:HasBuilding(CS.BuildingMeta.GroupId.Castle) then
+        _mediator:SendNotification(CS.NotificationConst.SHOW_NOTICE, Language.GetContent("mass061"));
+        return;
+    end
+    local tempData = {id = _cityVo.ID, fx=_cityVo.fx, fy = _cityVo.fy, type = Constant.PsDataCategory.City};
+    _mediator:SendNotification(LuaNotificationConst.SHOW_MASS_TIME_PANEL, tempData);
+    _mediator:HideView();
+end
+
+---点击资源支援按钮
+---@param obj object
+function OnResSupportBtnClick(obj)
+end
+
+---点击支援按钮
+---@param obj object
+function OnSupportBtnClick(obj)
+end
+
+---查看其他玩家消息返回
+---@param obj GcViewOtherPlayerInfo
+function OnViewOtherPlayerInfo(obj)
+    if tostring(obj.RoleId) == _cityVo.ownerId then
+        power.valueLbl.text = CS.CommonUtil.GetResourceString(obj.Power);
+    end
+end
+
+---销毁释放
+function OnDestory()
+    _mediator:UnRegisterMessageHandler(Protocol.GcViewOtherPlayerInfo.Signature);
+    UIEventListener.Get(goInBtn.gameObject).onClick = null;
+    UIEventListener.Get(favoriteBtn.gameObject).onClick = null;
+    UIEventListener.Get(inverstigateBtn.gameObject).onClick = null;
+    UIEventListener.Get(attackBtn.gameObject).onClick = null;
+    UIEventListener.Get(massBtn.gameObject).onClick = null;
+    UIEventListener.Get(resSupportBtn.gameObject).onClick = null;
+    UIEventListener.Get(supportBtn.gameObject).onClick = null;
+end

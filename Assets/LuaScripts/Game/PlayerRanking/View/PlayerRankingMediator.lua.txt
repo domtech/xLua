@@ -1,0 +1,136 @@
+
+local _itemFactory  -- 保存itemRender的工厂
+local NotificationConst = CS.NotificationConst
+local UIEventListener = CS.UIEventListener
+local Language = CS.Language
+local ProxyHelper = CS.ProxyHelper
+local EventDelegate = CS.EventDelegate
+local NotificationConstLua = require('Game/Common/Const/NotificationConst')
+local RankMeta = CS.RankMeta
+local StringUtil = CS.StringUtil
+---@type BaseUIMediatorForLua
+local _mediatorOwner -- 保存对应的Mediator
+
+---@type ScrollView
+local _scrollView    -- 当前滚动列表
+
+---@type UIPanel
+local _scrollPanel   -- 当前滚动列表面板
+
+
+
+
+-- 同 MonoBehaviour.Start() 函数
+function OnStart()
+        _itemFactory = CS.ItemRendererFactory(
+            function(itemGameObject)
+                local itemRender = CS.BaseScriptItemRendererViewForLua(itemGameObject);
+                return itemRender;  -- 返回创建的 ItemRender
+            end
+        );
+
+        grid.itemFactory = _itemFactory;
+        --grid:onItemEvent('+', OnGetItemEvent)
+        grid:onScrollViewDrag('+', OnDrag)
+
+        _scrollView = grid.scrollView;
+        --_scrollView.onDragFinished = OnDragFininshed
+
+        _scrollPanel = _scrollView.panel
+
+        title.text = Language.GetContent("ranking021")
+     
+end
+
+--- 处理Item的事件
+---@param render IItemRenderer
+---@param eventname string
+---@param param object
+-- function OnGetItemEvent(render, eventname, param)
+--     if eventname == "Press" then
+--         print("OnGetItemEvent press event")
+--     end
+-- end
+
+--- 创建完视图后立即调用
+---@param mediatorOwner PayBaseMediatorForLua
+---@param data object
+function OnPostCreateView( mediatorOwner, data )
+    _mediatorOwner = mediatorOwner;
+end
+
+--- 由C#调用,刷新数据显示
+---@param data object
+function OnShowViewAndRefresh(data)
+    print("OnShowViewAndRefresh")
+    ResetPage()
+    LoadMoreList()
+ 
+end
+
+function OnHideSelf ()
+    _mediator:HideView();
+end
+--
+--- 由C#调用
+function OnGetParamDic(data)
+    local Dic_Uint_Obj = CS.System.Collections.Generic.Dictionary(CS.System.UInt32, CS.System.Object);
+    local dic = Dic_Uint_Obj();
+    local style = CS.PanelBgStyle(CS.Language.GetContent ("alliance060"));
+    dic:Add(CS.PopupMode.ADD_RESOURCE_BAR_BG, style)
+    return dic;
+end
+
+
+--向服务器发送数据申请 
+function LoadMoreList()
+    --服务器暂时还没有协议，先自己手动调用
+    local msg = CS.Doomsday.Protocol.CgGetRankList()
+	_mediatorOwner:SendMessage(msg)
+end
+
+
+--接收到服务器返回的玩家排行榜类别列表，
+--说明：具体类别个数由策划表决定，每一个类别里面的排行数据由服务器决定，这个接口传回的data是每一个类别
+--对应的个人排行的具体排行数据 
+function OnUpdatePlayerRankingTypeList ()
+    print("PlayerRankingMediator::OnUpdatePlayerRankingTypeList")
+     --local testArray = {"21001","21002","21003"}
+    
+     --local arrayTarget = StringUtil.GetAllSpecificTypeofRankType(testArray, 1)
+
+    --获取联盟列表
+    local inviteMemberList = ProxyHelper.playerRankingProxy:GetPlayerRankingTypeList()
+    
+    RenderPlayerRankingTypeList(inviteMemberList)
+end
+
+function RenderPlayerRankingTypeList(list)
+    grid.data = list
+    grid:Reposition()
+end
+
+
+--重置数据
+function ResetPage ()
+    _scrollView:ResetPosition()--复位ScrollView
+end
+
+
+--列表的拖拽
+function OnDrag(data)
+    --RefreshHintLabel()
+end
+
+--- 由C#调用
+function OnGetPopupMode()
+    return CS.PopupMode.ADD_RESOURCE_BAR_BG | CS.PopupMode.ANIMATED;
+end
+
+-- 同 MonoBehaviour.OnDestroy() 函数
+function OnDestroy()
+    _scrollView.onDragFinished = nil
+    --grid:onItemEvent('-', OnGetItemEvent);
+   _itemFactory:Dispose();    -- 释放占用的资源
+   _itemFactory = nil;
+end

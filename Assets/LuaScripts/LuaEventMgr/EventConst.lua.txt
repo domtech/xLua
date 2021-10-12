@@ -1,0 +1,8 @@
+--- 定义事件的模块Id
+EventModuleId = {
+    NetMsg = 0,     -- 网络消息事件
+    UI = 1,         -- UI相关的事件
+    Logic = 2,      -- 逻辑相关的事件
+}
+
+return EventModuleId;

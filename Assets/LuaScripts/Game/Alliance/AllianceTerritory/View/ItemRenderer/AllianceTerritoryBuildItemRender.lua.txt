@@ -1,0 +1,253 @@
+--- Created by FanXuehui.
+--- DateTime: 2019/11/12
+--- 联盟领地建筑ItemRenderer实现
+--- AllianceTerritoryPanel.prefab
+
+local UIEventListener = CS.UIEventListener
+local Language = CS.Language
+local Constant = CS.Doomsday.Protocol.Constant
+local AllianceTerritoryProxy = CS.ProxyHelper.allianceTerritoryProxy
+local NotificationConst = require("Game/Common/Const/NotificationConst")
+local AppFacadeInstance = CS.ApplicationFacade.instance
+local CSNotificationConst = CS.NotificationConst
+
+--设置item需要的数据
+---@type AllianceBuildingVO
+local tData
+
+--当前item对象
+---@type BaseScriptItemRendererViewForLua
+local tRender
+
+---@type AsyncEtc1Texture
+local asyncBuildingIcon
+
+---计时器
+local _updater
+
+--返回item数据
+function GetData()
+    return tData
+end
+
+--保存item数据
+---@param data RewardObject
+function SetData(data)
+    tData = data
+    Refresh()
+end
+
+--刷新item
+function Refresh()
+    if nil ~= tData then
+        tRender.viewObject:SetActive(true)
+        Render(tData)
+    else
+        tRender.viewObject:SetActive(false)
+    end
+end
+
+function Render(data)
+    nameLbl.text = Language.GetContent(data.meta.name)
+    asyncBuildingIcon.path = data.meta.assetPreview   
+
+    RefreshBuildStateInfo()
+end
+
+--根据状态显示建筑信息
+function RefreshBuildStateInfo()
+    local switch = {
+        --未解锁
+        [Constant.PsAllianceBuildState.LOCK] = function()
+            normalObj.gameObject:SetActive(false)
+            resObj.gameObject:SetActive(false)
+            addBtn.gameObject:SetActive(false)
+            addSpr.gameObject:SetActive(false)
+            buildBtn.gameObject:SetActive(false)
+            buildingTexture.gameObject:SetActive(false)
+
+            unlockLbl.text = AllianceTerritoryProxy:GetUnlockConditionStr(tData)
+        end,
+        --解锁但未放置
+        [Constant.PsAllianceBuildState.UN_LOCK] = function()
+            normalObj.gameObject:SetActive(false)
+            resObj.gameObject:SetActive(false)
+            addBtn.gameObject:SetActive(false)
+            addSpr.gameObject:SetActive(false)
+            buildBtn.gameObject:SetActive(true)
+            buildBtn.text = Language.GetContent("workerDesc003")
+            unlockLbl.text = ""
+
+            if Constant.PsAllianceBuildType.__CastFrom(tData.meta.group) == Constant.PsAllianceBuildType.FLAG then
+                addSpr.gameObject:SetActive(true)
+                buildingTexture.gameObject:SetActive(false)
+            else
+                addSpr.gameObject:SetActive(false)
+                buildingTexture.gameObject:SetActive(true)
+            end
+        end,
+        [Constant.PsAllianceBuildState.LAY_UP] = function()
+            normalObj.gameObject:SetActive(true)
+            resObj.gameObject:SetActive(false)
+            addBtn.gameObject:SetActive(true)
+            addSpr.gameObject:SetActive(false)
+            buildBtn.gameObject:SetActive(false)
+            buildingTexture.gameObject:SetActive(true)
+            unlockLbl.text = ""
+
+            coordiateLbl.text = string.format("X:%d Y:%d", tData.x, tData.y)
+            stateLbl.text = "allyTerritory029"
+            durabilitylbl.text = string.format("%s:%.0f%%", Language.GetContent("allyTerritory031"), 0)
+        end,
+        [Constant.PsAllianceBuildState.BUILDING] = function()
+            normalObj.gameObject:SetActive(true)
+            resObj.gameObject:SetActive(false)
+            addBtn.gameObject:SetActive(true)
+            addSpr.gameObject:SetActive(false)
+            buildBtn.gameObject:SetActive(false)
+            buildingTexture.gameObject:SetActive(true)
+            unlockLbl.text = ""
+
+            coordiateLbl.text = string.format("X:%d Y:%d", tData.x, tData.y)
+            stateLbl.text = "allyTerritory029"
+
+            if _updater == nil and tData.troopInfoList ~= nil then
+                _updater = CS.UpdateFacade.AddTimeLimitUpdator(1, UpdateBuildProgress)
+            end
+            UpdateBuildProgress()
+        end,
+        [Constant.PsAllianceBuildState.USING] = function()
+            normalObj.gameObject:SetActive(true)
+            resObj.gameObject:SetActive(false)
+            addBtn.gameObject:SetActive(false)
+            addSpr.gameObject:SetActive(false)
+            buildBtn.gameObject:SetActive(false)
+            buildingTexture.gameObject:SetActive(true)
+            unlockLbl.text = ""
+
+            coordiateLbl.text = string.format("X:%d Y:%d", tData.x, tData.y)
+            stateLbl.text = "allyTerritory023"
+            durabilitylbl.text = string.format("%s:%d", Language.GetContent("allyTerritory021"), tData.durability)
+        end,
+        [Constant.PsAllianceBuildState.MINERAL] = function()
+            normalObj.gameObject:SetActive(true)
+            resObj.gameObject:SetActive(false)
+            addBtn.gameObject:SetActive(false)
+            addSpr.gameObject:SetActive(false)
+            buildBtn.gameObject:SetActive(false)
+            buildingTexture.gameObject:SetActive(true)
+            unlockLbl.text = ""
+
+            coordiateLbl.text = string.format("X:%d Y:%d", tData.x, tData.y)
+            stateLbl.text = "采集中"
+            durabilitylbl.text = Language.GetContent("剩余数量：", tData.progress)
+        end,
+        [Constant.PsAllianceBuildState.BURN] = function()
+            normalObj.gameObject:SetActive(true)
+            resObj.gameObject:SetActive(false)
+            addBtn.gameObject:SetActive(false)
+            addSpr.gameObject:SetActive(false)
+            buildBtn.gameObject:SetActive(false)
+            buildingTexture.gameObject:SetActive(true)
+            unlockLbl.text = ""
+
+            coordiateLbl.text = string.format("X:%d Y:%d", tData.x, tData.y)
+            stateLbl.text = "allyTerritory024"
+            durabilitylbl.text = string.format("%s:%d", Language.GetContent("allyTerritory021"), tData.durability)
+        end
+    }
+
+    if _updater ~= nil then
+        CS.UpdateFacade.RemoveLimitUpdator(_updater)
+        _updater = nil
+    end
+
+    local fSwitch = switch[tData.state]
+    if fSwitch then
+        fSwitch()
+    end
+end
+
+--创建完item回调
+---@param data BaseScriptItemRenderViewForLua
+function OnPostCreateRender(data)
+    tRender = data
+
+    UIEventListener.Get(tipBtn.gameObject).onClick = OnTipBtnClick
+    UIEventListener.Get(addBtn.gameObject).onClick = OnAddArmyClick
+    UIEventListener.Get(buildBtn.gameObject).onClick = OnBuildtnClick
+
+    buildBtn.text = Language.GetContent("workerDesc003")
+    asyncBuildingIcon = CS.AsyncEtc1Texture(buildingTexture)
+end
+
+--点击提示按钮
+---@param go gameObject
+function OnTipBtnClick(go)
+end
+
+--点击建造按钮
+---@param go gameObject
+function OnBuildtnClick(go)
+    if Constant.PsAllianceBuildType.__CastFrom(tData.meta.group) == Constant.PsAllianceBuildType.FLAG and
+            AllianceTerritoryProxy:GetAllianceFlagBuildingCount() >= CS.AllianceSetting.flagLimit then
+        AppFacadeInstance:SendNotification(CSNotificationConst.SHOW_NOTICE, Language.GetContent("旗帜建造数量已达上限"))
+        return
+    end
+
+    --放置建筑
+    CS.GameUtil.RemoveAllPopupPanels(true)
+    AppFacadeInstance:SendNotification(CSNotificationConst.CHANGE_CITY_MODE, false)
+
+    local worldPos =
+        CS.CameraUtil.GetWorldPos(
+        CS.UIManager.instance.mainCamera,
+        CS.UnityEngine.Vector2(CS.UnityEngine.Screen.width / 2, CS.UnityEngine.Screen.height / 2),
+        true
+    )
+    local globalx = CS.MapUtils.WorldPosToGlobalPosX(worldPos.x)
+    local globaly = CS.MapUtils.WorldPosToGlobalPosY(worldPos.y)
+
+    local Dic_Uint_Obj = CS.System.Collections.Generic.Dictionary(CS.System.String, CS.UnityEngine.Vector2)
+    local dic = Dic_Uint_Obj()
+    local style = CS.PanelBgStyle("UITexture/Background/alliance_bg", CS.Language.GetContent ("alliance109"))
+    dic:Add(tData.metaId, CS.UnityEngine.Vector2(globalx, globaly))
+
+    AppFacadeInstance:SendNotification(CSNotificationConst.SHOW_ALLIANCE_TERRITORY_BUILD_VIEW, dic)
+end
+
+--点击支援按钮
+---@param go gameObject
+function OnAddArmyClick(go)
+    AppFacadeInstance:SendNotification(NotificationConst.SHOW_ALLIANCE_TERRITORY_REINFORE, tData.id)
+end
+
+function OnDestroy()
+    UIEventListener.Get(tipBtn.gameObject).onClick = nil
+    UIEventListener.Get(addBtn.gameObject).onClick = nil
+    UIEventListener.Get(buildBtn.gameObject).onClick = nil
+
+    if tRender ~= nil then
+        -- body
+        tRender:Dispose()
+        tRender = nil
+    end
+
+    if asyncBuildingIcon ~= nil then
+        -- body
+        asyncBuildingIcon:Dispose()
+        asyncBuildingIcon = nil
+    end
+
+    if _updater ~= nil then
+        CS.UpdateFacade.RemoveLimitUpdator(_updater)
+        _updater = nil
+    end
+end
+
+--- 更新建造进度
+function UpdateBuildProgress()
+    local curBuildValue = AllianceTerritoryProxy:GetBuildingCurBuildValue(tData)
+    local progress = curBuildValue / tData.meta.buildValue * 100
+    durabilitylbl.text = string.format("%s:%.0f%%", Language.GetContent("allyTerritory031"), progress)
+end

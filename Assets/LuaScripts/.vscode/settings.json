@@ -1,0 +1,15 @@
+{
+    "editor.fontSize": 16,
+    "files.associations": { 
+        "*.lua.txt": "lua",
+        "*.txt": "lua",
+    },
+
+    "files.exclude": {
+        "**/*.meta": true,
+        "**/.classpath": true,
+        "**/.project": true,
+        "**/.settings": true,
+        "**/.factorypath": true
+    },
+}

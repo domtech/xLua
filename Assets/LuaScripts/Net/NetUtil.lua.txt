@@ -1,0 +1,52 @@
+---
+--- Created by Zhanghua.
+--- DateTime: 2019/9/23 15:13
+--- 为在 lua 中序列化及反序列化消息包提供支持
+---
+
+require('Protocol/luaProtocolImporter') -- 包含消息定义
+require('LuaEventMgr/EventMgr') -- 事件回调中心
+require('LuaEventMgr/EventConst') -- 事件类型
+
+local NetUtil = {};
+local NetFacade = NetFacade or CS.NetFacade;
+local unpack = unpack or table.unpack
+
+--- 发送指定消息对象到GS
+---@param msgObj TBase 指定要发送的消息对象必须是Thrift导出的消息包对象,即要有 write(oprot) 函数
+function NetUtil.sendToGS(msgObj)
+    NetFacade.SendMsg(msgObj.usignature, msgObj);
+end
+
+function NetUtil:sendToGS(msgObj)
+    NetFacade.SendMsg(msgObj.usignature, msgObj);
+end
+
+--- 初始处理网络消息函数
+---@param msgMeta {} 包含了注册事件时的信息, 如: {class = messageClass, func = msgHandleFunction},具体见 NetUtil:registerMessageHandler() 函数
+---@param msgData byte[] 来自C#的消息包数据
+local function onHandleNetMsg(msgMeta, msgData)
+    local msgInstance = msgMeta.class:new{};  -- 构建消息包实例
+
+    -- 反序列化消息包
+    if NetFacade.DeSerialize(msgInstance, msgData) == true then
+        if msgMeta.param then
+            msgMeta.func(msgInstance, unpack(msgMeta.param));   -- 回调网络消息处理函数
+        else
+            msgMeta.func(msgInstance);                  -- 回调网络消息处理函数
+        end
+    end
+end
+
+--- 注册一个网络消息处理事件
+---@param messageClass CgSynchronizeTimeLua 为 Protocol 目录下定义的消息结构体类之一
+---@param msgHandleFunction 类似 onCgSynchronizeTimeLua(CgSynchronizeTimeLua msgInstance, p1, p2, p3) 处理注册的网络消息的函数,第一个参数为消息体实例,后续参数为注册时传入的参数 param
+---@param param any 这些参数会作为 msgHandleFunction() 函数的第2,3,4,5 ... 个参数顺序传入
+function NetUtil:registerMessageHandler(messageClass, msgHandleFunction, ...)
+    local EventMgr = EventMgr:Instance();
+    EventMgr:RegisterEvent(EventModuleId.NetMsg, messageClass.usignature, onHandleNetMsg, {class = messageClass, func = msgHandleFunction, param = { ... }});
+end
+
+
+-- 这一句放在最后
+return NetUtil;

@@ -1,0 +1,46 @@
+local MassProxy = require("Game/EarlyWarning/Data/Proxy/MassProxy")
+
+G.ProxyHelper = {
+    massProxy = MassProxy,
+}
+
+local tMessage = {};
+
+function AddMessageFunc()
+    for key, item in pairs(G.ProxyHelper) do
+        item.RegisterMessageHandler = RegisterMessage;
+        item.UnRegisterMessageHandler = UnRegisterMessageHandler;
+    end
+end
+
+---注册
+function OnRegister()
+    for key, item in pairs(G.ProxyHelper) do
+        item:OnRegister(item);
+    end
+end
+
+---移除
+function DoOnRemove()
+    for key, item in pairs(G.ProxyHelper) do
+        item:DoOnRemove(item);
+    end
+end
+
+function OnHandlerMessage(value)
+    local key = value.signature;
+    if tMessage[key] then
+        tMessage[key](value);
+    end
+end
+
+---注册消息
+function RegisterMessage(self, messageName, handlerFunc)
+    tMessage[messageName] = handlerFunc;
+    this:RegisterMessageHandler(messageName, "OnHandlerMessage")
+end
+
+---反注册消息回调
+function UnRegisterMessageHandler(key)
+    this.UnRegisterMessageHandler(key);
+end

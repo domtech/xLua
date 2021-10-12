@@ -1,0 +1,110 @@
+
+
+local tResource = {{name = "Mass", bg = "bg_marchingstate_blue", iconEffect = "Effects/UI/ui_icon_qizi_1", icon = "icon_assembly_efc", effect = "Effects/UI/ui_icon_qizi_2", screenEffect = "Effects/UI/ui_yujing_3", bCountDown = true},
+{name = "Help",bg = "bg_marchingstate_blue", iconEffect = "Effects/UI/ui_icon_xin_1", icon = "icon_help", effect = "Effects/UI/ui_icon_qizi_2", screenEffect = "Effects/UI/ui_yujing_3", bCountDown = true},
+{name = "Scout",bg = "bg_marchingstate_red", iconEffect = "Effects/UI/ui_icon_yanjing", icon = "icon_reconnaissance_efc", effect = "Effects/UI/ui_icon_yanjing_2", screenEffect = "Effects/UI/ui_yujing_2", bCountDown = false},
+{name = "Attack", bg = "bg_marchingstate_red", iconEffect = "Effects/UI/ui_icon_jian_1", icon = "icon_fighting", effect = "Effects/UI/ui_icon_yanjing_2", screenEffect = "Effects/UI/ui_yujing_2", bCountDown = false}}
+
+local asynParticle;
+local asynScreenParticle;
+local asynIconParticle;
+local _updater;
+local _countDown = 0;
+
+function OnStart()
+end
+
+---设置预警按钮
+---@param value int 预警级别
+
+function SetWarningBtn(value)
+    local bShowBtn = CS.ProxyHelper.earlyWarnProxy:IsShowBtn(value);
+    if not bShowBtn then
+        warningBtn.gameObject:SetActive(false)
+        btn.spriteName = "";
+        --sprite.spriteName = "";
+        return;
+    end
+    local tTemp = tResource[value];
+    warningBtn.gameObject:SetActive(true)
+    if tTemp ~= nil then
+        btn.spriteName = tTemp.bg;
+        
+        --CS.ProxyHelper.earlyWarnProxy:SetBtnSize(btn);
+        SetEffect(tTemp);
+    else
+        screenEffect.gameObject:SetActive(false)
+    end
+end
+
+---设置特效
+function SetEffect(item)
+    screenEffect.gameObject:SetActive(true)
+    if asynParticle == nil then
+        asynParticle = CS.NGUIParticleAsyncPrefab(effect.gameObject.transform, 1);--icon背景特效
+    end
+
+    if asynScreenParticle == nil then
+        asynScreenParticle =  CS.NGUIParticleAsyncPrefab(screenEffect.gameObject.transform, 1);--屏幕背景特效
+    end
+
+    if asynIconParticle == nil then
+        asynIconParticle =  CS.NGUIParticleAsyncPrefab(iconEffect.gameObject.transform, 10);
+    end
+    asynIconParticle.path = item.iconEffect--icon特效
+    asynParticle.path = item.effect--icon背景特效
+    
+   
+    local bShowBtnEffect = CS.ProxyHelper.earlyWarnProxy:IsShowBackEffect();--列表个数>0 && 存在没有被忽略的 
+    if bShowBtnEffect ~= true then
+        screenEffect.gameObject:SetActive(false)
+    else
+        asynScreenParticle.path = item.screenEffect--全屏背景特效
+    end
+end
+
+---设置全屏特效
+function SetScreenEffect(item)
+    if asynScreenParticle == nil then
+        asynScreenParticle = CS.NGUIParticleAsyncPrefab(screenEffect.gameObject.transform, 0);
+    end
+    asynScreenParticle.path = item.screenEffect;
+    if item.bCountDown then
+        StartTime();
+    end
+end
+
+---开始倒计时
+function StartTime()
+    if _updater == nil then
+        _updater = CS.UpdateFacade.AddTimeLimitUpdator(1, UpdateCountDown)
+    end
+end
+
+---移除倒计时
+function RemoveTime()
+    if _updater ~= nil then
+        CS.UpdateFacade.RemoveLimitUpdator(_updater);
+        _updater = nil;
+    end
+end
+
+---刷新倒计时
+function UpdateCountDown()
+    if _countDown >= 10 then
+        if screenEffect ~= nil then
+            screenEffect.gameObject:SetActive(false)
+        end
+        RemoveTime();
+        return;
+    end
+    _countDown = _countDown + 1;
+end
+
+function Dispose()
+    RemoveTime();
+    if asynParticle ~= nil then
+        asynParticle:Dispose();
+        asynParticle = nil;
+    end
+end

@@ -1,0 +1,67 @@
+--- Created by FanXuehui.
+--- DateTime: 2019/11/21
+--- 支援界面士兵详情ItemRenderer实现
+--- AllianceTerritoryReinforePanel.prefab
+
+local UIEventListener = CS.UIEventListener
+local Language = CS.Language
+local NotificationConst = require("Game/Common/Const/NotificationConst")
+
+--设置item需要的数据
+---@type PsAllianceMassSoldierInfo
+local tData
+
+--当前item对象
+---@type BaseScriptItemRendererViewForLua
+local tRender
+
+--返回item数据
+function GetData()
+    return tData
+end
+
+--保存item数据
+---@param data AllianceBuildingCategoryVO
+function SetData(data)
+    tData = data
+    Refresh()
+end
+
+--刷新item
+function Refresh()
+    if nil ~= tData then
+        tRender.viewObject:SetActive(true)
+        Render(tData)
+    else
+        tRender.viewObject:SetActive(false)
+    end
+end
+
+function Render(data)
+    count.text = tostring(data.Num)
+    local meta = CS.SoldierMeta.GetMeta(data.MetaId)
+    if meta ~= nil then
+        bG.spriteName = meta.iconQuality
+        icon.spriteName = meta.iconAsset
+        levelIcon.spriteName = CS.SoldierUtils.GetSoldierLevelIcon(meta.era)
+    end
+end
+
+--创建完item回调
+---@param data BaseScriptItemRenderViewForLua
+function OnPostCreateRender(data)
+    tRender = data
+end
+
+function OnDestroy()
+    if tRender ~= nil then
+        -- body
+        tRender:Dispose()
+        tRender = nil
+    end
+
+    if _itemFactory ~= nil then
+        _itemFactory:Dispose() -- 释放占用的资源
+        _itemFactory = nil
+    end
+end

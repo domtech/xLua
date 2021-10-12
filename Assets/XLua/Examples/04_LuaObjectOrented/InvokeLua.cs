@@ -9,6 +9,7 @@
 using System;
 using UnityEngine;
 using XLua;
+using Game.Lua;
 
 namespace XLuaTest
 {
@@ -33,7 +34,7 @@ namespace XLuaTest
 
         [CSharpCallLua]
         public delegate ICalc CalcNew(int mult, params string[] args);
-
+        private static LuaTable sharedEnv;//= luaEnv.NewTable();    // 在多个Lua文件中共享的表,可以通过此表来通信
         private string script = @"
                 local calc_mt = {
                     __index = {
@@ -88,15 +89,34 @@ namespace XLuaTest
         // Use this for initialization
         void Start()
         {
-            LuaEnv luaenv = new LuaEnv();
-            Test(luaenv);//调用了带可变参数的delegate，函数结束都不会释放delegate，即使置空并调用GC
-            luaenv.Dispose();
+
+            LuaManager.InitLuaManager();
+
+
+            //LuaEnv luaEnv = new LuaEnv();
+            //sharedEnv = luaEnv.NewTable();    // 在多个Lua文件中共享的表,可以通过此表来通信
+
+            //var scriptEnv = luaEnv.NewTable();
+            //LuaTable meta = luaEnv.NewTable(); // 为每个脚本设置一个独立的环境，可一定程度上防止脚本间全局变量、函数冲突
+            //meta.Set("__index", luaEnv.Global);
+            //scriptEnv.SetMetaTable(meta);
+            //meta.Dispose();
+            //scriptEnv.Set("G", sharedEnv);
+
+            LuaTable scriptEnv = LuaManager.Instance.NewTable();
+
+            Test(scriptEnv);//调用了带可变参数的delegate，函数结束都不会释放delegate，即使置空并调用GC
+            scriptEnv.Dispose();
         }
 
-        void Test(LuaEnv luaenv)
+        void Test(LuaTable scriptEnv)
         {
-            luaenv.DoString(script);
-            CalcNew calc_new = luaenv.Global.GetInPath<CalcNew>("Calc.New");
+            //scriptEnv.DoString(script);
+
+            LuaManager.Instance.DoString(script);
+
+            CalcNew calc_new = scriptEnv.GetInPath<CalcNew>("Calc.New");
+            //CalcNew calc_new = luaenv.Global.GetInPath<CalcNew>("Calc.New");
             ICalc calc = calc_new(10, "hi", "john"); //constructor
             Debug.Log("sum(*10) =" + calc.Add(1, 2));
             calc.Mult = 100;

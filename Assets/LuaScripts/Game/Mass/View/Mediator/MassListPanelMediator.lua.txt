@@ -1,0 +1,113 @@
+
+local NotificationConst = require('Game/Common/Const/NotificationConst');
+local _cmCenter = CS.NetFacade.instance;
+
+local _mediator;
+---@type AllianceVO
+local _data;
+local _itemFactory;
+
+function OnPostCreateView(mediator, data)
+    _mediator = mediator;
+    _data = data;
+
+    _mediator:RegisterMessageHandler(CS.Doomsday.Protocol.GcAllianceMassList.Signature, "OnGetAllianceMassList")
+
+    emptyTips.text = CS.Language.GetContent("mass044");
+end
+
+function SendMassListMsg()
+    --请求集结列表
+    _cmCenter:SendMessage(CS.Doomsday.Protocol.CgAllianceMassList())
+    --告知服务器打开了集结面板(同步用)
+    _cmCenter:SendMessage(CS.Doomsday.Protocol.CgAllianceMassOpenPanel());
+end
+
+function OnStart()
+    _itemFactory = CS.ItemRendererFactory(
+        function(itemGameObject)
+            return CS.BaseScriptItemRendererViewForLua(itemGameObject);  -- 返回创建的 ItemRender
+        end
+    );
+    grid.itemFactory = _itemFactory;
+    grid:onItemEvent('+', OnGridItem);
+end
+
+function OnGetParamDic(data)
+    local Dic_Uint_Obj = CS.System.Collections.Generic.Dictionary(CS.System.UInt32, CS.System.Object);
+    local dic = Dic_Uint_Obj();
+    local style = CS.PanelBgStyle("UITexture/Background/alliance_bg", CS.Language.GetContent ("mass013"));
+    dic:Add(CS.PopupMode.ADD_RESOURCE_BAR_BG, style)
+    return dic;
+end
+
+function OnGetPopupMode()
+    return CS.MassListPanelMediator.GetPopupMode();
+end
+
+function OnAfterCreateView(data)
+end
+
+---显示前调用
+function BeforeShowView(data)
+    grid.gameObject:SetActive(false);
+end
+
+function OnShowViewAndRefresh(data)
+    _data = data;
+    CS.ProxyHelper.massProxy:SetClickState(true);
+    SendMassListMsg();
+end
+
+function OnAfterHideView()
+    _cmCenter:SendMessage(CS.Doomsday.Protocol.CgAllianceMassClosePanel());
+end
+
+function OnDispose()
+    grid:onItemEvent('-', OnGridItem);
+    _mediator:UnRegisterMessageHandler(CS.Doomsday.Protocol.GcAllianceMassList.Signature);
+    if _itemFactory ~= nil then
+        _itemFactory:Dispose();
+        _itemFactory = nil;
+    end
+end
+
+---请求集结列表返回
+---@param massList List<PsAllianceMassInfo> 集结列表
+function OnGetAllianceMassList(massList)
+    CS.ProxyHelper.massProxy:SetMassTeams(massList.MassList);
+    SetGridData(massList.MassList)
+end
+
+---设置滑动信息
+function SetGridData(data)
+    if grid == nil then
+        return;
+    end
+    emptyTips.gameObject:SetActive(data.Count <= 0);
+    grid.data = data;
+    grid.gameObject:SetActive(true);
+end
+
+---点击列表item
+---@param render IItemRenderer
+---@param eventName string
+---@param param object
+function OnGridItem(render, eventName, param)
+    if eventName == CS.ItemRendererEventNames.CLICK then
+        _mediator:SendNotification(NotificationConst.SHOW_MASS_TEAM_DETAIL_INFO, render.data)
+    end
+end
+
+---刷新单条集结信息
+function OnUpdateOneMass(value)
+    local nIdx = -1;
+    for i, val in pairs(grid.data) do
+        if val.MassId == value.MassId then
+            nIdx = i;
+        end
+    end
+    if nIdx >= 0 then
+        grid.data[nIdx] = value;
+    end
+end

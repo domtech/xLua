@@ -1,0 +1,136 @@
+--- Created by FanXuehui.
+--- DateTime: 2019/11/12
+--- 联盟领地ItemRenderer实现
+--- AllianceTerritoryPanel.prefab
+
+local UIEventListener = CS.UIEventListener
+local Language = CS.Language
+local NotificationConst = require('Game/Common/Const/NotificationConst')
+
+--设置item需要的数据
+---@type AllianceBuildingCategoryVO
+local tData
+
+--是否展开
+---@type boolean
+local isExpand
+
+--当前item对象
+---@type BaseScriptItemRendererViewForLua
+local tRender
+
+---@type IItemRendererHost
+local host
+
+-- 保存itemRender的工厂
+local _itemFactory  
+
+--返回item数据
+function GetData()
+    return tData
+end
+
+--保存item数据
+---@param data AllianceBuildingCategoryVO
+function SetData(data)
+    tData = data
+    Refresh()
+end
+
+--保存host
+---@param data IItemRendererHost
+function SetHost(data)
+    host = data
+end
+
+
+--刷新item
+function Refresh()
+    if nil ~= tData then
+        tRender.viewObject:SetActive(true)
+        Render(tData)
+    else
+        tRender.viewObject:SetActive(false)
+    end
+end
+
+function Render(data)
+    nameLbl.text = Language.GetContent(data.groupName)
+    numberLbl.text = Language.GetContent(data.curCount .. "/" ..data.totalCount)
+    icon.spriteName = data.groupIcon
+    descLbl.text = Language.GetContent(data.groupDesc)
+    grid.data = data.buildingList
+    grid.gameObject:SetActive(isExpand)
+    descLbl.gameObject:SetActive(isExpand)
+
+    if isExpand then
+        expandBtn.gameObject.transform.localEulerAngles = CS.UnityEngine.Vector3(0,0,90)
+    else
+        expandBtn.gameObject.transform.localEulerAngles = CS.UnityEngine.Vector3(0,0,180)
+    end
+end
+
+--创建完item回调
+---@param data BaseScriptItemRenderViewForLua
+function OnPostCreateRender(data)
+    tRender = data
+
+    UIEventListener.Get(expandBtn.gameObject).onClick = OnExpandBtnClick
+
+    _itemFactory = CS.ItemRendererFactory(
+            function(itemGameObject)
+                local itemRender = CS.BaseScriptItemRendererViewForLua(itemGameObject);
+                return itemRender  -- 返回创建的 ItemRender
+            end
+    );
+
+    grid.itemFactory = _itemFactory
+    grid:onValidateDataComplete('+', OnValidateDataComplete)
+end
+
+function OnValidateDataComplete()
+    grid:Reposition()
+
+    if host ~= nil then
+        host:Reposition()
+    end
+end
+
+function OnDestroy()
+    UIEventListener.Get(expandBtn.gameObject).onClick = nil
+    grid:onValidateDataComplete('-', OnValidateDataComplete)
+
+    if tRender~=nil then
+        -- body
+        tRender:Dispose()
+        tRender = nil
+    end
+
+    if _itemFactory ~= nil then
+        _itemFactory:Dispose()    -- 释放占用的资源
+        _itemFactory = nil
+    end
+end
+
+--点击展开按钮 
+---@param go gameObject
+function OnExpandBtnClick(go)
+    isExpand = not isExpand
+
+    grid.gameObject:SetActive(isExpand)
+    descLbl.gameObject:SetActive(isExpand)
+
+    if isExpand then
+        expandBtn.gameObject.transform.localEulerAngles = CS.UnityEngine.Vector3(0,0,90)
+        grid.data = tData.buildingList
+    else
+        expandBtn.gameObject.transform.localEulerAngles = CS.UnityEngine.Vector3(0,0,180)
+        grid.data = nil
+    end
+
+    grid:Reposition()
+
+    if host ~= nil then
+        host:Reposition()
+    end
+end

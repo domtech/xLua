@@ -1,0 +1,5 @@
+
+
+function OnStart()
+    print("UIScene_Login::OnStart");
+end

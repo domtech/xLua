@@ -1,0 +1,244 @@
+--- Created by FanXuehui.
+--- DateTime: 2019/11/20
+--- 联盟领地增援界面实现
+--- AllianceTerritoryReinforePanel.prefab
+
+local AllianceTerritoryProxy = CS.ProxyHelper.allianceTerritoryProxy
+local NotificationConstLua = require("Game/Common/Const/NotificationConst")
+local NotificationConst = CS.NotificationConst
+local Constant = CS.Doomsday.Protocol.Constant
+local Language = CS.Language
+local UIEventListener = CS.UIEventListener
+local MapUtils = CS.MapUtils
+
+local _itemFactory  -- 保存itemRender的工厂
+
+---@type BaseUIMediatorForLua
+local _mediatorOwner  -- 保存对应的Mediator
+
+---@type AllianceBuildingVO
+local _data
+
+---@type AsyncEtc1Texture
+local asyncBuildingIcon
+
+local _buildId
+
+---计时器
+local _updater
+
+-- 同 MonoBehaviour.Start() 函数
+function OnStart()
+    _itemFactory =
+        CS.ItemRendererFactory(
+        function(itemGameObject)
+            local itemRender = CS.BaseScriptItemRendererViewForLua(itemGameObject)
+            return itemRender -- 返回创建的 ItemRender
+        end
+    )
+
+    memberTable.itemFactory = _itemFactory
+    memberTable:onItemEvent("+", OnGetItemEvent)
+
+    asyncBuildingIcon = CS.AsyncEtc1Texture(icon)
+
+    UIEventListener.Get(returnBtn.gameObject).onClick = OnCloseBtnClick
+    UIEventListener.Get(joinPanel.gameObject).onClick = OnAddBtnClick
+end
+
+-- 同 MonoBehaviour.OnDestroy() 函数
+function OnDestroy()
+    memberTable:onItemEvent("-", OnGetItemEvent)
+    if _itemFactory ~= nil then
+        _itemFactory:Dispose() -- 释放占用的资源
+        _itemFactory = nil
+    end
+
+    if asyncBuildingIcon ~= nil then
+        -- body
+        asyncBuildingIcon:Dispose()
+        asyncBuildingIcon = nil
+    end
+
+    if _updater ~= nil then
+        CS.UpdateFacade.RemoveLimitUpdator(_updater)
+        _updater = nil;
+    end
+
+    UIEventListener.Get(returnBtn.gameObject).onClick = null
+end
+
+--- 处理Item的事件
+---@param render IItemRenderer
+---@param eventname string
+---@param param object
+function OnGetItemEvent(render, eventName, param)
+    if eventName == CS.ItemRendererEventNames.CLICK then
+        local curRender = render.luaView:GetLuaTable()
+        if curRender ~= nil then
+            curRender:ShowTroopDetailView()
+        end
+    end
+end
+
+--- 创建完视图后立即调用
+---@param mediatorOwner BaseUIMediatorForLua
+---@param data object
+function OnPostCreateView(mediatorOwner, data)
+    _mediatorOwner = mediatorOwner
+end
+
+--- 由C#调用,刷新数据显示
+---@param data object
+function OnShowViewAndRefresh(data)
+    _buildId = data
+    RefreshView()
+end
+
+---C#调用，在界面展示之前回调
+---@param data object
+function BeforeShowView(data)
+end
+
+--- 由C#调用
+---@param data object
+function OnShowViewNoRefresh(data)
+end
+
+--- 由C#调用
+function OnGetPopupMode()
+    return CS.PopupMode.ADD_MASK | CS.PopupMode.ANIMATED
+end
+
+---点击关闭按钮
+---@param obj GameObject 点击对象
+function OnCloseBtnClick(obj)
+    _mediatorOwner:HideView()
+end
+
+---点击加入按钮
+---@param obj GameObject 点击对象
+function OnAddBtnClick(obj) 
+    --建造中类型为ALLIANCE_BUILD,建造完成后驻防为ALLIANCE_GARRISON     
+    local psJobType = isBuildBuilding() and Constant.PsTroopJobType.ALLIANCE_BUILD or Constant.PsTroopJobType.ALLIANCE_GARRISON
+    local blockIndex = CS.GameConfig.mapBlockIndex  
+    local fx = MapUtils.BlockPosToGlobalPosX(blockIndex, _data.x)
+    local fy = MapUtils.BlockPosToGlobalPosY(blockIndex, _data.y)
+    local ctx =
+        CS.ArmySetoutContext(
+        psJobType,
+        Constant.PsDataCategory.ALLIANCE_BUILD,
+        _data.id,
+        fx,
+        fy
+    )
+    _mediatorOwner:SendNotification(CS.NotificationConst.EXECUTE_ARMY_PROCESS, ctx)
+end
+
+function RefreshView()
+    _data = AllianceTerritoryProxy:GetBuildingVOById(_buildId)
+    RefreshBuildingInfo()
+    RefreshTeamList()
+end
+--- 刷新建筑信息
+function RefreshBuildingInfo()
+    if _data == nil then
+        return
+    end
+
+    buildName.text = Language.GetContent(_data.meta.name)
+    asyncBuildingIcon.path = _data.meta.assetPreview
+
+    if _updater ~= nil then
+        CS.UpdateFacade.RemoveLimitUpdator(_updater)
+        _updater = nil;
+    end
+
+    --采集中
+    if _data.state == Constant.PsAllianceBuildState.MINERAL then
+        title.text = Language.GetContent("resourceBtn001")
+        progress.gameObject:SetActive(false)
+        teamCapacity.text = ""
+        state.text = string.format("%s:%d", Language.GetContent("采集人数"), 0)
+        durability.text = ""
+    else
+        title.text = Language.GetContent("allyTerritory028")
+
+        progress.gameObject:SetActive(true)
+        teamCapacity.text = Language.GetContent("allyTerritory032")
+        state.text = AllianceTerritoryProxy:GetAllianceBuildStateStr(_data.state)
+
+        --部队容量
+        local totalSoldier = CalcTotalSoldierNum()
+        progress.progressLabel.text = string.format("%d/%d", totalSoldier, _data.meta.stationedSoldier)
+        local soldierProgress = totalSoldier / _data.meta.stationedSoldier * 100
+        progress.progressBar.value = soldierProgress
+
+        if _data.state == Constant.PsAllianceBuildState.BUILDING then
+            if _updater == nil and _data.troopInfoList ~= nil then
+                _updater = CS.UpdateFacade.AddTimeLimitUpdator(1, UpdateBuildProgress)
+            end
+            UpdateBuildProgress()
+        elseif _data.state == Constant.PsAllianceBuildState.LAY_UP then
+            durability.text = string.format("%s:%.0f%%", Language.GetContent("allyTerritory031 "), 0)
+        else
+            durability.text = string.format("%s:%d", Language.GetContent("allyTerritory021"), _data.durability)
+        end
+    end
+end
+
+--- 刷新部队信息
+function RefreshTeamList()
+    if _data == nil then
+        return
+    end
+    UpdateJoinBtnState()
+    memberTable.data = _data.troopInfoList
+end
+
+---设置可加入按钮状态
+function UpdateJoinBtnState()
+    --自己是否有军队在建筑里
+    local hasJoin = AllianceTerritoryProxy:IsSelfHasArmyInBuilding(_data)
+    if hasJoin then
+        joinPanel.gameObject:SetActive(false)
+        ChangeScrollViewSize(1044)
+        contentTable:Reposition()
+    else
+        joinPanel.gameObject:SetActive(true)
+        ChangeScrollViewSize(880)
+        contentTable:Reposition()
+    end
+end
+
+---设置滑动大小
+---@param nHeight int 滑动区域高度
+function ChangeScrollViewSize(nHeight)
+    scrollViewArea.height = nHeight
+    dragArea.size.y = nHeight
+    memberTable.gameObject.transform.localPosition = CS.UnityEngine.Vector3(0,nHeight/2,0)
+end
+
+---计算携带军队总数
+function CalcTotalSoldierNum()
+    local nNum = 0
+    if _data.troopInfoList ~= nil then
+        for key, item in pairs(_data.troopInfoList) do
+            for key2, item2 in pairs(item.Soldiers) do
+                nNum = nNum + item2.Num
+            end
+        end
+    end
+    return nNum
+end
+
+--- 更新建造进度
+function UpdateBuildProgress()
+    local curBuildValue = AllianceTerritoryProxy:GetBuildingCurBuildValue(_data)
+    local buildProgress = curBuildValue / _data.meta.buildValue * 100
+    durability.text = string.format("%s:%.0f%%", Language.GetContent("allyTerritory031 "), buildProgress)
+end
+---是否是建造中
+function isBuildBuilding()
+    return _data.state == Constant.PsAllianceBuildState.LAY_UP or _data.state == Constant.PsAllianceBuildState.BUILDING
+end

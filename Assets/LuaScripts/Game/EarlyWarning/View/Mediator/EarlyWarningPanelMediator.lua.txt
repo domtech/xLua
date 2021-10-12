@@ -1,0 +1,182 @@
+
+--C#
+local UIEventListener = CS.UIEventListener;
+local Language = CS.Language;
+local LuaBehaviour = CS.Game.Lua.LuaBehaviour;
+local _cmCenter = CS.NetFacade.instance;
+local Protocol = CS.Doomsday.Protocol;
+local Constant = Protocol.Constant
+local ProxyHelper = CS.ProxyHelper;
+
+local NotificationConst = require('Game/Common/Const/NotificationConst');
+
+local _mediator;
+local _data;
+local _itemFactory;
+local _lastRender;
+
+function OnPostCreateView(mediator, data)
+    _mediator = mediator;
+    _data = data;
+
+    _itemFactory = CS.ItemRendererFactory(
+        function(itemGameObject)
+            return CS.BaseScriptItemRendererViewForLua(itemGameObject);  -- 返回创建的 ItemRender
+        end
+    );
+    memberTable.itemFactory = _itemFactory;
+    memberTable:onItemEvent('+', OnGridItem);
+end
+
+function OnStart()
+    --绑定点击
+    UIEventListener.Get(closeBtn.gameObject).onClick = OnCloseClick;
+    UIEventListener.Get(ignoreAllBtn.gameObject).onClick = OnIgnoreAllBtn;
+    title.text = Language.GetContent("mass065");
+    ignoreTxt.text = Language.GetContent("mass066");
+    ignoreAllBtnText.text = Language.GetContent("vigilanceEffect36");
+end
+
+function OnAfterCreateView(data)
+    -- local tempData = ProxyHelper.earlyWarnProxy:GetWarnMemberList();
+    -- OnUpdateWarningList(tempData)
+end
+
+function OnShowViewAndRefresh(data)
+    local tempData = ProxyHelper.earlyWarnProxy:GetWarnMemberList();
+    OnUpdateWarningList(tempData)
+    --Reposition()
+end
+
+function OnDispose()
+    if _itemFactory ~= nil then
+        _itemFactory:Dispose();
+        _itemFactory = nil;
+    end
+    memberTable:onItemEvent('-', OnGridItem);
+    UIEventListener.Get(closeBtn.gameObject).onClick = nil;
+    UIEventListener.Get(ignoreAllBtn.gameObject).onClick = nil;
+end
+
+---点击关闭按钮
+---@param obj GameObject 点击对象
+function OnCloseClick(obj)
+    _mediator:HideView();
+end
+
+---忽略所有预警
+function OnIgnoreAllBtn(obj)
+    ProxyHelper.earlyWarnProxy:IngoreAll();
+end
+
+---接受返回的集结队伍信息
+---@param data List<EarlyWarningMemberInfoVO> 集结队伍信息
+function OnUpdateWarningList(data)
+    memberTable.data = data;
+end
+
+---点击条目
+function OnGridItem(render, eventName, param)
+    
+    if eventName == CS.ItemRendererEventNames.CLICK then
+        _mediator:SendNotification(NotificationConst.ON_SHOW_MASS_MEMBER_DETAIL, render.luaView)
+    end
+end
+
+---显示队伍成员详细信息
+---@param data LuaBehaviourRender
+function OnShowMassMemberDetail(data)
+
+    --需要判断一下事件类型
+    ResetLastMember();
+    if _lastRender ~= data:GetLuaTable() then
+        _lastRender = data:GetLuaTable();
+        if _lastRender:IsScout() == true then
+            return
+        end
+        if _lastRender:IsShowMassMemberInfos() == true then
+            UpdateMember();
+        end
+    else
+        if _lastRender:IsScout() == true then
+            _lastRender = nil
+            return
+        end
+        _lastRender = nil
+    end
+    Reposition();
+ 
+end
+
+--重置
+function ResetLastMember()
+    if _lastRender == nil then
+        return;
+    end
+    massMemberDetailPanel:SetActive(false);
+    _lastRender:Reset();
+end
+
+---刷新选中状态
+function UpdateMember()
+    if _lastRender == nil then
+        return;
+    end
+    _lastRender:UpdateMember(massMemberDetailPanel);
+    FillSoldierInfo();
+end
+
+---填充军队信息
+function FillSoldierInfo()
+    local soldiers = _lastRender:GetSoldiers();
+    local detailPanel = _lastRender:GetDetailPanel();
+    ResetGameObject(massMemberDetailPanel);
+    massMemberDetailPanel:SetActive(true);
+    ResetTable();
+    for key, item in pairs(soldiers) do
+        local go = GetOneSoldierObj(key, memList);
+        go:SetActive(true);
+        go.transform:SetParent(troopDetailTable.gameObject.transform);
+        local goLuaTable = LuaBehaviour.GetTableByLuaBehaviour(go, "");
+        goLuaTable:SetSoldierInfo(item.meta, item.nNum);
+        ResetGameObject(go)
+    end
+end
+
+---刷新Table
+function Reposition()
+    troopDetailTable:Reposition();
+    memberTable:Reposition();
+end
+
+---获取一个士兵GameObject对象
+---@param key 位置
+---@param memList 已有对象
+function GetOneSoldierObj(key, memList)
+    local trans = troopDetailTable.gameObject.transform;
+    local go = key < trans.childCount and trans:GetChild(key) or nil;
+    if go == nil then
+        go = CS.UnityEngine.GameObject.Instantiate(soliderDetailItemRender);
+    end
+    return go.gameObject;
+end
+
+---重置table
+function ResetTable()
+    local itemList = troopDetailTable:GetChildList();
+    for key, item in pairs(itemList) do
+        item.gameObject:SetActive(false);
+    end
+end
+
+---遣返某个加入者
+---@param troopId long 要踢出的队伍ID
+function OnRemoveMember(troopId)
+    ProxyHelper.earlyWarnProxy:RemoveMember(troopId);
+end
+
+---初始化复制的对象
+function ResetGameObject(obj)
+    obj.transform.localPosition = CS.UnityEngine.Vector3.zero;
+    obj.transform.localScale = CS.UnityEngine.Vector3.one;
+end

@@ -1,0 +1,21 @@
+---添加上下黑边，营造电影播放氛围---
+local _mediatorOwner = null
+
+function OnStart()
+end
+
+function Dispose()
+    _mediatorOwner = nil
+end
+
+--- OnPostCreateView 
+--- @param mediatorOwner 
+--- @param data          
+function OnPostCreateView( mediatorOwner, data )
+    _mediatorOwner = mediatorOwner
+end
+
+--- 由C#调用
+function OnGetPopupMode()    
+    return CS.PopupMode.NONE
+end

@@ -1,0 +1,12 @@
+function OnStart()
+end
+
+---设置士兵信息
+---@param data SoldierMeta 士兵信息
+---@param num int 数量
+function SetSoldierInfo(self, data, num)
+    count.text = tostring(num);
+    bG.spriteName = data.iconQuality;
+    icon.spriteName = data.iconAsset;
+    levelIcon.spriteName = CS.SoldierUtils.GetSoldierLevelIcon(data.era);;
+end

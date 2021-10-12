@@ -1,0 +1,107 @@
+--C#
+local Language = CS.Language;
+local UIEventListener = CS.UIEventListener;
+local EventDelegate = CS.EventDelegate;
+local Settings = CS.Settings;
+local CommonUtil = CS.CommonUtil;
+local Protocol = CS.Doomsday.Protocol;
+local Constant = Protocol.Constant
+local CSNotificationConst = CS.NotificationConst;
+
+---
+local _mediator;
+---@type table
+local _npcVo;
+
+local _timeList;
+---当前选中的时间
+local _curSelectTime;
+
+function OnPostCreateView(mediator, data)
+    _mediator = mediator;
+    _npcVo = data;
+end
+
+function OnStart()
+    InitText();
+    InitTimeList();
+    UIEventListener.Get(sureBtn.gameObject).onClick = OnMassBtn;
+end
+
+function OnAfterCreateView(data)
+    InitTimeTab();
+end
+
+function OnAfterHideView(data)
+end
+
+function OnShowViewAndRefresh(data)
+end
+
+function OnDispose()
+    EventDelegate.Remove(tab_1.toggle.onChange, OnToggleChange);
+    EventDelegate.Remove(tab_2.toggle.onChange, OnToggleChange);
+    EventDelegate.Remove(tab_3.toggle.onChange, OnToggleChange);
+    EventDelegate.Remove(tab_4.toggle.onChange, OnToggleChange);
+end
+
+---初始化文本
+function InitText()
+    title.text = Language.GetContent("mass003");
+    btnText.text = Language.GetContent("mass001");
+    contentText.text = Language.GetContent("mass004");
+end
+
+---初始化时间列表
+function InitTimeList()
+    _timeList = CommonUtil.ParseStringToIntList(Settings.massTimeGroup, CommonUtil.commaSeparator);
+    tab_1.label.text = Language.GetContent("alliance281", tostring(_timeList[0]));
+    tab_2.label.text = Language.GetContent("alliance281", tostring(_timeList[1]));
+    tab_3.label.text = Language.GetContent("alliance281", tostring(_timeList[2]));
+    tab_4.label.text = Language.GetContent("alliance281", tostring(_timeList[3]));
+end
+
+---初始化时间Tab
+function InitTimeTab()
+    EventDelegate.Add(tab_1.toggle.onChange, OnToggleChange);
+    EventDelegate.Add(tab_2.toggle.onChange, OnToggleChange);
+    EventDelegate.Add(tab_3.toggle.onChange, OnToggleChange);
+    EventDelegate.Add(tab_4.toggle.onChange, OnToggleChange);
+end
+
+---选择时间
+function OnToggleChange()
+    if tab_1.toggle.value then
+        _curSelectTime = _timeList[0]
+    elseif tab_2.toggle.value then
+        _curSelectTime = _timeList[1]
+    elseif tab_3.toggle.value then
+        _curSelectTime = _timeList[2]
+    else
+        _curSelectTime = _timeList[3]
+    end
+end
+
+---获取时间，有默认
+function GetTime()
+    if _curSelectTime ~= nil then
+        return;
+    end
+    if tab_1.toggle.value then
+        _curSelectTime = _timeList[0]
+    elseif tab_2.toggle.value then
+        _curSelectTime = _timeList[1]
+    elseif tab_3.toggle.value then
+        _curSelectTime = _timeList[2]
+    else
+        _curSelectTime = _timeList[3]
+    end
+end
+
+---点击集结按钮
+function OnMassBtn()
+    GetTime();
+    local ctx = CS.ArmySetoutContext(Constant.PsTroopJobType.START_RALLY, _npcVo.type, _npcVo.id, _npcVo.fx, _npcVo.fy, tostring(_curSelectTime));
+    _mediator:SendNotification(CSNotificationConst.EXECUTE_ARMY_PROCESS, ctx);
+    _mediator:HideView();
+end

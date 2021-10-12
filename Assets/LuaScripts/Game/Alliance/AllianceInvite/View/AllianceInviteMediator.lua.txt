@@ -1,0 +1,282 @@
+--- Created by FanXuehui.
+--- DateTime: 2019/10/16
+--- 联盟邀请功能实现
+
+local _itemFactory  -- 保存itemRender的工厂
+local NotificationConst = CS.NotificationConst
+local AllianceProxy = CS.ProxyHelper.allianceProxy
+local UIEventListener = CS.UIEventListener
+local Language = CS.Language
+local EventDelegate = CS.EventDelegate
+local NotificationConstLua = require('Game/Common/Const/NotificationConst')
+
+---一页最多有10条数据
+local ONE_PAGE_MAX_COUNT = 10
+
+local REFRESH_Y_OFFSET = 250
+
+---@type BaseUIMediatorForLua
+local _mediatorOwner -- 保存对应的Mediator
+
+---@type ScrollView
+local _scrollView    -- 当前滚动列表
+---@type UIPanel
+local _scrollPanel   -- 当前滚动列表面板
+
+---@type number 
+local _currentPage = 0     -- 保存当前第几页
+
+---@type boolean
+local _hasMoreInfo = true  -- 是否还有更多数据
+
+---@type number
+local _lastListCount = 0   -- 上次列表数据条目数量
+
+---@type bool 
+local _isSearching   --是否是搜索列表
+
+---@type number
+local _refreshYPosition
+
+
+---@type number
+local _searchPageToLoad = 1   --搜索结果的第几页
+local _searchList             --搜索结果列表
+
+-- 同 MonoBehaviour.Start() 函数
+function OnStart()
+    _itemFactory = CS.ItemRendererFactory(
+            function(itemGameObject)
+                local itemRender = CS.BaseScriptItemRendererViewForLua(itemGameObject);
+                return itemRender;  -- 返回创建的 ItemRender
+            end
+    );
+
+    grid.itemFactory = _itemFactory;
+    grid:onItemEvent('+', OnGetItemEvent)
+    grid:onScrollViewDrag('+', OnDrag)
+
+    UIEventListener.Get(searchBtn.gameObject).onClick = OnSearchButtonClick
+
+    _scrollView = grid.scrollView;
+    _scrollView.onDragFinished = OnDragFininshed
+
+    _scrollPanel = _scrollView.panel
+end
+
+--- 处理Item的事件
+---@param render IItemRenderer
+---@param eventname string
+---@param param object
+function OnGetItemEvent(render, eventname, param)
+    if eventname == NotificationConstLua.ALLIANCE_INVITE_CLICK then
+        --邀请
+        local viewVO = render.data
+        if viewVO ~= nil then
+            local msg = CS.Doomsday.Protocol.CgAllianceInviteOne(viewVO.roleId)
+            _mediatorOwner:SendMessage(msg)
+        end
+    end
+end
+
+--- 创建完视图后立即调用
+---@param mediatorOwner PayBaseMediatorForLua
+---@param data object
+function OnPostCreateView( mediatorOwner, data )
+    _mediatorOwner = mediatorOwner;
+end
+
+--- 由C#调用,刷新数据显示
+---@param data object
+function OnShowViewAndRefresh(data)
+    ResetPage()
+    LoadMoreList(_currentPage + 1)
+end
+
+---C#调用，在界面展示之前回调 
+---@param data object
+function BeforeShowView(data)
+end
+
+--- 由C#调用
+---@param data object
+function OnShowViewNoRefresh(data)
+end
+
+--- 由C#调用
+function OnGetPopupMode()
+    return CS.PopupMode.ADD_RESOURCE_BAR_BG | CS.PopupMode.ANIMATED;
+end
+
+--- 由C#调用
+function OnGetParamDic(data)
+    local Dic_Uint_Obj = CS.System.Collections.Generic.Dictionary(CS.System.UInt32, CS.System.Object);
+    local dic = Dic_Uint_Obj();
+    local style = CS.PanelBgStyle("UITexture/Background/alliance_bg", CS.Language.GetContent ("allianceBtn012"));
+    dic:Add(CS.PopupMode.ADD_RESOURCE_BAR_BG, style)
+    return dic;
+end
+
+---加载更多信息，发送CgAllianceInviteList消息
+---@param page 第几页
+function LoadMoreList(page)
+    _isSearching = false
+    local msg = CS.Doomsday.Protocol.CgAllianceInviteList(page)
+	_mediatorOwner:SendMessage(msg)
+end
+
+---搜索，发送CgAllianceInviteSearch消息
+---@param name 搜索的玩家名称
+---@param page 在第几页搜索
+function LoadSearchList(name, page)
+    page = page or 1
+    _isSearching = true
+    local msg = CS.Doomsday.Protocol.CgAllianceInviteSearch(name, page)
+    _mediatorOwner:SendMessage(msg)
+end
+
+---邀请列表数据刷新
+function OnUpdateAllianceInviteList(data)
+    _currentPage = data
+    local inviteMemberList = AllianceProxy:GetMyAllianceInviteList()
+    RenderAllianceList(inviteMemberList)
+
+    --此次列表数据新增小于1页的条目时，说明已经没有更多数据了
+    if inviteMemberList ~= nul and inviteMemberList.Count - _lastListCount < ONE_PAGE_MAX_COUNT then
+        _hasMoreInfo = false
+    else
+        _hasMoreInfo = true
+    end
+
+    if _lastListCount == 0 then
+        _scrollView:ResetPosition()
+    end
+    if inviteMemberList ~= nul then
+        _lastListCount = inviteMemberList.Count
+    end
+end
+
+--搜索数据刷新
+function OnUpdateAllianceInviteSearchList(data)
+    local curTotalCount = data
+
+    local inviteMemberList = AllianceProxy:GetMyAllianceInviteSearchList()
+    RenderAllianceList(inviteMemberList)
+    _scrollView:ResetPosition()
+
+    if inviteMemberList.Count == 0 then
+        _mediatorOwner:SendNotification(NotificationConst.SHOW_NOTICE, Language.GetContent("toast018"))
+        return
+    end
+
+    _searchPageToLoad = _searchPageToLoad + 1
+
+    if inviteMemberList ~= nul and curTotalCount < ONE_PAGE_MAX_COUNT then
+        _hasMoreInfo = false
+    else
+        _hasMoreInfo = true
+    end
+end
+
+---邀请一个玩家成功
+function OnInviteOneMemberSuccess(data)
+    local inviteMemberList = AllianceProxy:GetMyAllianceInviteList()
+    RenderAllianceList(inviteMemberList)
+end
+
+---刷新邀请列表显示
+function RenderAllianceList(list)
+    grid.data = list
+    grid:Reposition()
+
+    local itemCount = list.Count
+    _refreshYPosition = CalculateRefreshY(itemCount)
+    hintLbl.gameObject:SetActive(itemCount >= ONE_PAGE_MAX_COUNT)
+end
+
+---列表的提示语内容
+function RefreshHintLabel()
+    if _hasMoreInfo then
+        if _scrollView.transform.localPosition.y >= _refreshYPosition then
+            hintLbl.text = Language.GetContent("public414"); -- public414=释放加载更多
+        else
+            hintLbl.text = Language.GetContent("public413"); -- public413=向上拉取更多
+        end
+    else
+        hintLbl.text = Language.GetContent("public415"); -- public415=没有更多了
+    end
+end
+
+---重置列表
+function ResetPage()
+    _currentPage = 0
+    _hasMoreInfo = true
+    _isSearching = false
+    _lastListCount = 0
+    AllianceProxy:ClearMyAllianceInviteList()
+    searchInput.value = ""
+    _scrollView:ResetPosition()
+end
+
+---点击搜索按钮
+---@param go gameObject
+function OnSearchButtonClick(go)
+    local searchText = searchInput.value
+    if searchText == nil or searchText == '' then
+        if _isSearching then
+            --正在搜索，则重置推荐列表,重新请求第一页数据
+            ResetPage()
+            LoadMoreList(1)
+        else
+            --搜索文本为空请求下一页数据
+            LoadMoreList(_currentPage + 1)
+        end
+    else
+        _searchPageToLoad = 1
+        AllianceProxy:ClearMyAllianceInviteSearchList()
+        _scrollView:ResetPosition()
+        LoadSearchList(searchText)
+    end
+end
+
+--列表的拖拽
+function OnDrag(data)
+    RefreshHintLabel()
+end
+
+--列表的拖拽结束
+function OnDragFininshed()
+    if not _hasMoreInfo then
+        return
+    end
+
+    if _scrollView.transform.localPosition.y >= _refreshYPosition then
+        if _isSearching then
+            LoadSearchList(searchInput.value, _searchPageToLoad)
+        else
+            LoadMoreList(_currentPage + 1)
+        end
+    end
+end
+
+function CalculateRefreshY(itemCount)
+    local contentHeight = 142 * itemCount
+
+    local clippingSizeY = _scrollPanel.baseClipRegion.w
+    if contentHeight < clippingSizeY then
+        return REFRESH_Y_OFFSET
+    else
+        return contentHeight - clippingSizeY + REFRESH_Y_OFFSET
+    end
+end
+
+-- 同 MonoBehaviour.OnDestroy() 函数
+function OnDestroy()
+    UIEventListener.Get(searchBtn.gameObject).onClick = nil
+    _scrollView.onDragFinished = nil
+
+    grid:onItemEvent('-', OnGetItemEvent);
+    _itemFactory:Dispose();    -- 释放占用的资源
+    _itemFactory = nil;
+
+end

@@ -1,0 +1,98 @@
+require("LuaEventMgr/Class")
+
+EventMgr = {
+    --实例对象
+    _instance = nil,
+    --观察值列表
+    _listeners = nil
+}
+EventMgr.__index = EventMgr
+setmetatable(EventMgr, Class)
+
+local NetFacade = CS.NetFacade;
+
+-- 构造器
+function EventMgr:new()
+    local t = {}
+    t = Class:new()
+    setmetatable(t, EventMgr)
+    return t
+end
+
+-- 获取单例接口
+function EventMgr:Instance()
+    if EventMgr._instance == nil then
+        EventMgr._instance = EventMgr:new()
+        EventMgr._listeners = {}
+    end
+    return EventMgr._instance
+end
+
+---@param moduleId ushort 注册的模块的id,为 EventModuleId 之一
+---@param eventId ushort 事件Id
+---@param func function 响应事件的回调函数
+---@param param any 在回调事件处理函数 func 时,会作为第一个参数传入
+function EventMgr:RegisterEvent(moduleId, eventId, func, param)
+    local key = NetFacade.ToEventKey(moduleId, eventId);
+    self:AddEventListener(key, func, param)
+end
+
+---@param moduleId ushort 反注册的模块的id,为 EventModuleId 之一
+---@param eventId ushort 反注册的事件Id
+---@param func function 反注册的响应事件的回调函数
+function EventMgr:UnRegisterEvent(moduleId, eventId, func)
+    local key = NetFacade.ToEventKey(moduleId, eventId);
+    self:RemoveEventListener(key, func)
+end
+
+---@param moduleId ushort 注册的模块的id,为 EventModuleId 之一
+---@param eventId ushort 事件Id
+---@param param any 传递给响应函数的参数
+function EventMgr:DispatchEvent(moduleId, eventId, param)
+    local key = NetFacade.ToEventKey(moduleId, eventId);
+    local listeners = self._listeners[key]
+    if nil == listeners then
+        return false
+    end
+    for _, v in ipairs(listeners) do
+        if v.p then
+            v.f(v.p, param)
+        else
+            v.f(param)
+        end
+    end
+    return true;
+end
+
+function EventMgr:AddEventListener(eventId, func, param)
+    local listeners = self._listeners[eventId]
+    -- 获取key对应的监听者列表，结构为{func,para}，如果没有就新建
+    if listeners == nil then
+        listeners = {}
+        self._listeners[eventId] = listeners -- 保存监听者
+    end
+    --过滤掉已经注册过的消息，防止重复注册
+    for _, v in pairs(listeners) do
+        if (v and v.f == func) then
+            return
+        end
+    end
+    --if func == nil then
+    --    print("func is nil!")
+    --end
+    --加入监听者的回调和参数
+    table.insert(listeners, { f = func, p = param })
+end
+
+function EventMgr:RemoveEventListener(eventId, func)
+    local listeners = self._listeners[eventId]
+    if nil == listeners then
+        return
+    end
+    for k, v in pairs(listeners) do
+        if (v and v.f == func) then
+            table.remove(listeners, k)
+            return
+        end
+    end
+end

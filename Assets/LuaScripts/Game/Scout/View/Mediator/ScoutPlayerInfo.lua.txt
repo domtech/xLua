@@ -1,0 +1,130 @@
+---
+---地图上点击玩家主程显示信息面板
+---lijunwei 2019-9-27
+---
+
+local LuaNotificationConst = require('Game/Common/Const/NotificationConst');
+
+---c#
+local LuaUnityExtention = CS.LuaUnityExtention;--unity 扩展接口类， zhaoxuefei
+
+local UIEventListener = CS.UIEventListener;
+local NotificationConst = CS.NotificationConst;
+local MapUtils = CS.MapUtils;
+local ProxyHelper = CS.ProxyHelper;
+local AudioFacade = CS.AudioFacade;
+local AudioNameConst = CS.AudioNameConst;
+local _cmCenter = CS.NetFacade.instance;
+local Language = CS.Language;
+local Settings = CS.Settings;
+local Protocol = CS.Doomsday.Protocol;
+local Constant = Protocol.Constant
+local WebTexture = CS.WebTexture
+local myWebTexture;
+---存放当前mediator
+---@type BaseUIMediator
+local _mediator;
+
+---存放界面数据
+---@type MapCityVO
+local _cityVo;
+
+---界面加载完成
+function OnStart()
+    _mediator:RegisterMessageHandler(Protocol.GcViewOtherPlayerInfo.Signature, "OnViewOtherPlayerInfo");
+end
+
+---创建(先于OnStart)
+---@param mediator UIBaseMediator
+---@param data object
+function OnPostCreateView(mediator, data)
+    _mediator = mediator;
+    _cityVo = data;
+end
+
+---创建完成
+---@param data object
+function OnAfterCreateView(data)
+    power.nameLbl.text = Language.GetContent("scienceFeature006");
+    alliance.nameLbl.text = Language.GetContent("MainUi0003");
+ 
+end
+
+---隐藏
+function OnAfterHideView()
+    
+end
+
+---显示刷新
+function OnShowViewAndRefresh(data)
+    _cityVo = data;
+    _cmCenter:SendMessage(Protocol.CgViewOtherPlayerInfo(tonumber(_cityVo.ScoutRoleId)));
+    RefreshPanel();
+end
+
+---刷新界面信息
+function RefreshPanel()
+    if _cityVo == nil then
+        return;
+    end
+    -- coordLbl.text = CS.UIUtil.GetCoordinateString(_cityVo.x, _cityVo.y);
+    -- nameLbl.text = _cityVo.name;
+    -- SetName();
+    --ResetBtnState();
+    --local isAlliance = _cityVo.allianceQuickId and _cityVo.allianceQuickId:isEqual(CS.PlayerUserInfo.instance.allianceQuickId) or false;
+
+    -- investigateCost.icon.spriteName = CS.GameCurrencyUtil.GetCurrencyIcon2(Settings.investigatePriceType);
+        
+    --     local costPrice = Settings.investigateCityBasePrice + Settings.investigateCityLevelPrice * _cityVo.level;
+    --     investigateCost.nameLbl.text = costPrice;
+    
+
+end
+
+---设置玩家信息
+function SetName()
+   
+
+    --头像
+  
+end
+
+
+---查看其他玩家消息返回
+---@param obj GcViewOtherPlayerInfo
+function OnViewOtherPlayerInfo(obj)
+    --local a = 1;
+    -- if tostring(obj.RoleId) == _cityVo.ownerId then
+    --     power.valueLbl.text = CS.CommonUtil.GetResourceString(obj.Power);
+    -- end
+
+    power.valueLbl.text = tostring(obj.Power)
+    if obj.Alliance == nil then
+        alliance.valueLbl.text = Language.GetContent("resourceInfo006")
+    else
+        alliance.valueLbl.text = tostring(obj.Alliance)
+    end
+
+    if nil == myWebTexture then
+        myWebTexture = WebTexture(headTexture)
+    end
+    CS.PlayerInfoUtil.SetHeadToWebTexture(myWebTexture, obj.Head);
+   
+    coordLbl.text = CS.UIUtil.GetCoordinateString(_cityVo.ScoutX, _cityVo.ScoutY);
+    nameLbl.text = obj.Name;
+    -- local ownerName = _cityVo.name;
+    -- local allianceName = Language.GetContent("resourceInfo006");
+    -- if _cityVo.allianceQuickId ~= nil then
+    --     allianceName = _cityVo.allianceAlias;
+    --     local ownerName = '[' .. allianceName ..']' .. ownerName;
+    -- end
+    -- nameLbl.text = ownerName;
+    -- alliance.valueLbl.text = allianceName;
+    -- power.valueLbl.text = "1.0K";
+end
+
+---销毁释放
+function OnDestory()
+    _mediator:UnRegisterMessageHandler(Protocol.GcViewOtherPlayerInfo.Signature);
+  
+end

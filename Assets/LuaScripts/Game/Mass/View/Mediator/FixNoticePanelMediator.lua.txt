@@ -1,0 +1,22 @@
+
+---@type BaseUIMediator
+local _mediator;
+---
+local _NoticeData;
+
+---开始创建view
+function OnPostCreateView(mediator, data)
+    _mediator = mediator;
+    _NoticeData = data;
+end
+
+function OnStart()
+end
+
+---创建完成
+function OnAfterCreateView(data)
+end
+
+---销毁
+function OnDispose()
+end

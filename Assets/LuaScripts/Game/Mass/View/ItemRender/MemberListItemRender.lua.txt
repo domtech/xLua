@@ -1,0 +1,225 @@
+--C#
+local MapUtils = CS.MapUtils;
+local ProxyHelper = CS.MapUtils;
+local PlayerInfoUtil = CS.PlayerInfoUtil;
+local WebTexture = CS.WebTexture;
+local WorkQueueUtils = CS.WorkQueueUtils;
+local BaseUIMediatorForLua = CS.BaseUIMediatorForLua;
+local UIEventListener = CS.UIEventListener;
+local UIComponentUtils = CS.UIComponentUtils;
+local Language = CS.Language;
+
+local NotificationConst = require('Game/Common/Const/NotificationConst');
+
+---设置item需要的数据
+---@type PsAllianceMassInfo
+local tData;
+local bIsLeader;
+---确认框
+local _confirmView;
+
+---当前item对象
+---@type BaseScriptItemRendererViewForLua
+local tRender;
+---头像
+local myWebTexture;
+---计时
+local _updater;
+---剩余时间
+local _lastRemainTime = -1;
+---倒计时结束时间
+local _endTime = 0;
+
+---创建完item回调
+---@param render BaseScriptItemRenderViewForLua
+function OnPostCreateRender(render)
+    tRender = render;
+    UIEventListener.Get(repatriateBtn.gameObject).onClick = OnRepatriateBtn;
+    InitText();
+end
+
+---初始化文本显示
+function InitText()
+    arrived.text = Language.GetContent("mass006");
+end
+
+---返回item数据
+function GetData()
+    return tData;
+end
+
+---保存item数据
+---@param data RewardObject
+function SetData(data)
+    if data == nil or data.troopInfo == nil or data.bIsLeader == nil then
+        return;
+    end
+    tData = data.troopInfo;
+    bIsLeader = data.bIsLeader;
+    Refresh();
+end
+
+---刷新item
+function Refresh()
+    if nil ~= tData then
+        tRender.viewObject:SetActive(true);
+        Render();
+    else
+        tRender.viewObject:SetActive(false);
+    end
+end
+
+---刷新显示
+---@param data PsAllianceMassTroopInfo
+function Render()
+    if myWebTexture == nil then
+        myWebTexture = WebTexture(icon);
+    end
+    name.text = tData.Name;
+    captainTip:SetActive(tData.IsLeader == 1);
+    SetRepatriateBtnState();
+    _endTime = CS.GameConfig.serverTime + tData.Second * 1000;
+    SetArriveState();
+    troopNum.text = Language.GetContent("mass016") .. ": " .. CalcSoldierNum();
+    SetDragon();
+    PlayerInfoUtil.SetHeadToWebTexture(myWebTexture, tData.Icon);
+end
+
+function SetRepatriateBtnState()
+    if not bIsLeader then
+        repatriateBtn.gameObject:SetActive(false);
+        return;
+    end
+    if tData.IsLeader == 1 then
+        repatriateBtn.gameObject:SetActive(false);
+    else
+        repatriateBtn.gameObject:SetActive(true);
+    end
+end
+
+---设置龙信息
+function SetDragon()
+    dragonIconF.gameObject:SetActive(false);
+    dragonIconS.gameObject:SetActive(false);
+    local tDragonData = GetDragonData(tData.Dragons);
+    if #tDragonData >= 1 then
+        dragonIconF.gameObject:SetActive(true);
+        local dragon_1 = BaseUIMediatorForLua.GetTableByLuaBehaviour(dragonIconF.gameObject, "");
+        dragon_1:SetDragonInfo(tDragonData[1]);
+    end
+    if #tDragonData >= 2 then
+        dragonIconS.gameObject:SetActive(true);
+        local dragon_2 = BaseUIMediatorForLua.GetTableByLuaBehaviour(dragonIconS.gameObject, "");
+        dragon_2:SetDragonInfo(tDragonData[2]);
+    end
+end
+
+---获取龙的数据
+function GetDragonData(data)
+    local tDragonMeta = {};
+    for key, value in pairs(data) do
+        local meta = CS.DragonMeta.GetMeta(key);
+        table.insert(tDragonMeta, {meta = meta, level = value});
+    end
+    return tDragonMeta;
+end
+
+---计算携带军队总数
+function CalcSoldierNum()
+    local nNum = 0;
+    for key, item in pairs(tData.Soldiers) do
+        nNum = nNum + item.Num;
+    end
+    return nNum;
+end
+
+---设置到达状态
+function SetArriveState()
+    if tData.State == 1 then
+        SetArriveLabelState(false);
+        if _updater == nil then
+            _updater = CS.UpdateFacade.AddTimeLimitUpdator(1, UpdateCountDown)
+        end
+    elseif tData.State == 2 then
+        SetArriveLabelState(true);
+    else
+        SetArriveLabelState(true);
+    end
+end
+
+---设置到达显隐
+function SetArriveLabelState(bShow)
+    arrived.gameObject:SetActive(bShow);
+    countDown.gameObject:SetActive(not bShow);
+end
+
+---设置倒计时显示
+function UpdateCountDown()
+    if not countDown or _endTime == nil or _lastRemainTime == nil then
+        return;
+    end;
+    _lastRemainTime = UIComponentUtils.GenerateTimeInfo(_endTime, _lastRemainTime, countDown);
+end
+
+---设置展开按钮
+function SetUnfoldBtn(rotaion)
+    if unfoldBtn.gameObject.transform.localRotation == rotation then
+        return;
+    end
+    CS.TweenRotation.Begin(unfoldBtn.gameObject, 0.2, CS.UnityEngine.Quaternion.Euler(rotaion)).method = CS.UITweener.Method.EaseInOut;
+end
+
+---重置选中状态
+function Reset(self)
+    SetUnfoldBtn(CS.UnityEngine.Vector3(0,0,90));
+end
+
+---刷新详细信息
+---@param self
+---@param detailPanel 详细信息控件
+function UpdateMember(self, tempPanel)
+    if detailPanel.transform.childCount <= 0 then
+        tempPanel.transform:SetParent(detailPanel.transform);
+    end
+    local rotation = CS.UnityEngine.Vector3(0,0,0);
+    SetUnfoldBtn(rotation);
+end
+
+---获取军队信息
+function GetSoldiers(self)
+    return tData.Soldiers;
+end
+
+---
+function GetDetailPanel(self)
+    return detailPanel;
+end
+
+---点击踢出按钮
+function OnRepatriateBtn(obj)
+    _confirmView = CS.ConfirmView.CreateAndShow(Language.GetContent("mass052"),
+                Language.GetContent("mass053", tData.Name),
+                CS.ConfirmView.ALL);
+    _confirmView:okHandler('+', RepatriateSomeOne)
+end
+
+function RepatriateSomeOne()
+    CS.ApplicationFacade.instance:SendNotification(NotificationConst.ON_MASS_REMOVE_MEMBER, tData.TroopId); 
+end
+
+function OnDestroy()
+    UIEventListener.Get(repatriateBtn.gameObject).onClick = nil;
+    if _updater ~= nil then
+        CS.UpdateFacade.RemoveLimitUpdator(_updater);
+        _updater = nil;
+    end
+    if tRender ~= nil then
+        tRender:Dispose();
+        tRender = nil;
+    end
+    if _confirmView ~= nil then
+        _confirmView:okHandler('-', RepatriateSomeOne);
+        _confirmView:Dispose();
+        _confirmView = nil
+    end
+end

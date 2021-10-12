@@ -1,0 +1,304 @@
+--地图上点击联盟建筑弹出信息面板
+local LuaNotificationConst = require('Game/Common/Const/NotificationConst')
+
+---c#
+
+local LuaUnityExtention = CS.LuaUnityExtention
+local UIEventListener = CS.UIEventListener
+local MapUtils = CS.MapUtils
+local ProxyHelper = CS.ProxyHelper
+local AudioFacade = CS.AudioFacade
+local AudioNameConst = CS.AudioNameConst
+local _cmCenter = CS.NetFacade.instance
+local Language = CS.Language
+local Protocol = CS.Doomsday.Protocol
+local GameConfig = CS.GameConfig
+local CommonUtil = CS.CommonUtil
+local Constant = CS.Doomsday.Protocol.Constant
+local UIComponentUtils = CS.UIComponentUtils
+local CSNotificationConst = CS.NotificationConst
+local NotificationConst = require('Game/Common/Const/NotificationConst')
+local AllianceTerritoryProxy = CS.ProxyHelper.allianceTerritoryProxy
+
+local _mediator
+local _mapBuildingVO
+local _buildingMeta
+local _buildEndTime
+local _updater
+---@type AsyncEtc1Texture
+local _asyncBuildingIcon
+
+function OnStart()
+end
+
+function OnPostCreateView(mediator, data)
+    _mediator = mediator
+    _mapBuildingVO = data
+    _buildingMeta = _mapBuildingVO.meta
+    
+    UIEventListener.Get(chatButton.gameObject).onClick = OnChatBtnClick
+    UIEventListener.Get(shareButton.gameObject).onClick = OnShareBtnClick
+    UIEventListener.Get(markButton.gameObject).onClick = OnMarkBtnClick
+
+    UIEventListener.Get(goInButton.gameObject).onClick = OnMassBtnClick
+    UIEventListener.Get(scoutButton.gameObject).onClick = OnScoutBtnClick    
+    UIEventListener.Get(previewButton.gameObject).onClick = OnPreviewBtnClick
+    UIEventListener.Get(increaseButton.gameObject).onClick = OnIncreaseBtnClick    
+    UIEventListener.Get(attackButton.gameObject).onClick = OnAttackBtnClick    
+end
+
+function OnAfterCreateView(data)
+    --文本初始化
+    local function initLabels()                        
+        attackButton.text = Language.GetContent("vigilanceEffect26")
+        scoutButton.text = Language.GetContent("vigilanceEffect25")
+        goInButton.text = Language.GetContent("mass001")
+        previewButton.text = Language.GetContent("allyTerritory027")
+        increaseButton.text = Language.GetContent("allyTerritory028")
+    end
+    initLabels()
+    _asyncBuildingIcon = CS.AsyncEtc1Texture(buildingTexture)  
+end
+
+--- 由C#调用,刷新数据显示
+---@param data object
+function OnShowViewAndRefresh(data)
+    _mapBuildingVO = data
+    _buildingMeta = _mapBuildingVO.meta
+    RefreshView()
+end
+
+--- 由C#调用
+---@param data object
+function OnShowViewNoRefresh(data)
+    _mapBuildingVO = data
+    _buildingMeta = _mapBuildingVO.meta
+    RefreshView()
+end
+
+--刷新界面
+function RefreshView()
+    if nil == _mapBuildingVO then
+        return
+    end
+    
+    --持久度和状态信息
+    local function setStatusLabel()
+        statusLbl.nameLbl.text = Language.GetContent("allyTerritory022")
+        durabilityLbl.nameLbl.text = Language.GetContent("allyTerritory021")
+        durabilityLbl.valueLbl.text = CommonUtil.GetDiamondString(_mapBuildingVO.durability).."/"..CommonUtil.GetDiamondString(_buildingMeta.defenseValue)
+
+        statusLbl.valueLbl.text = "[253449]"..Language.GetContent("allyTerritory008")
+        
+        if IsBuildBuilding() then --建造中
+            durabilityLbl.nameLbl.text = Language.GetContent("allyTerritory031")--建造进度           
+            local curBuildValue = GetOthersBuildingCurValue()
+            durabilityLbl.valueLbl.text = math.ceil( (curBuildValue / _buildingMeta.buildValue * 100) ).."%"
+            statusLbl.nameLbl.text = Language.GetContent("allyTerritory030")-- =剩余时间            
+            if _mapBuildingVO.endTime > GameConfig.serverTime  then
+                _buildEndTime = _mapBuildingVO.endTime + 1000
+                StartTime() --开始倒计时  
+                UpdateTime() --立即刷新
+            else    
+                statusLbl.valueLbl.text = ""
+            end  
+        elseif _mapBuildingVO.state == Constant.PsAllianceBuildState.BURN then  --燃烧
+            statusLbl.valueLbl.text = "[C9413E]"..Language.GetContent("allyTerritory024")
+        end        
+    end
+    --设置按钮信息
+    local function setButtonState()
+        if nil == _mapBuildingVO.relation then
+            print("AllianceBuildingDetailTapMenu _mapBuildingVO.relation is nil....")
+        elseif _mapBuildingVO.relation == Constant.PsMapNodeRelation.FRIEND then
+            attackButton.gameObject:SetActive(false)
+            scoutButton.gameObject:SetActive(false)
+            goInButton.gameObject:SetActive(false)
+            previewButton.gameObject:SetActive(true)
+            increaseButton.gameObject:SetActive(true)
+        elseif _mapBuildingVO.relation == Constant.PsMapNodeRelation.NONE or _mapBuildingVO.relation == Constant.PsMapNodeRelation.ENEMY then
+            attackButton.gameObject:SetActive(true)
+            scoutButton.gameObject:SetActive(true)
+            goInButton.gameObject:SetActive(true)
+            previewButton.gameObject:SetActive(false)
+            increaseButton.gameObject:SetActive(false)
+        else
+            print("AllianceBuildingDetailTapMenu _mapBuildingVO.relation is "..tostring(_mapBuildingVO.relation))
+        end
+    end
+    setStatusLabel()
+    setButtonState()
+    --联盟信息
+    title.text = Language.GetContent(_buildingMeta.name)
+    allianceLbl.nameLbl.text = Language.GetContent("allyTerritory026")
+    allianceLbl.valueLbl.text = _mapBuildingVO.allianceName
+    positionLabel.text = "X:".._mapBuildingVO.x.." ".."Y:".._mapBuildingVO.y
+    _asyncBuildingIcon.path = _buildingMeta.assetPreview
+end
+
+---是否是建造中
+function IsBuildBuilding()
+    return _mapBuildingVO.state == Constant.PsAllianceBuildState.LAY_UP or (_mapBuildingVO.state == Constant.PsAllianceBuildState.BUILDING and _mapBuildingVO.endTime > GameConfig.serverTime)
+end
+
+---获取建筑进度
+function GetOthersBuildingCurValue()
+    return math.min(100,math.ceil( _mapBuildingVO.curBuildValue + _mapBuildingVO.speed * (GameConfig.serverTime - _mapBuildingVO.requestTime) / 1000 ))
+end
+
+---开始倒计时
+function StartTime()
+    if _updater == nil then
+        _updater = CS.UpdateFacade.AddTimeLimitUpdator(1, UpdateTime)
+    end
+end
+
+---移除倒计时
+function RemoveTime()
+    if _updater ~= nil then
+        CS.UpdateFacade.RemoveLimitUpdator(_updater)
+        _updater = nil
+    end
+end
+
+---刷新倒计时
+function UpdateTime()
+    if _buildEndTime < GameConfig.serverTime then        
+        RemoveTime()
+        RefreshView()
+        return
+    end
+    local _lastRemainTime = 0
+    UIComponentUtils.GenerateTimeInfo(_buildEndTime,_lastRemainTime,statusLbl.valueLbl)  
+    local curBuildValue = GetOthersBuildingCurValue()
+    durabilityLbl.valueLbl.text = math.ceil( (curBuildValue / _buildingMeta.buildValue * 100) ).."%"
+end
+
+--留言
+function OnChatBtnClick( obj )
+    _mediator:SendNotification(CSNotificationConst.SHOW_NOTICE, Language.GetContent("publicForbid001"))
+    --TODO
+end
+
+--分享
+function OnShareBtnClick( obj )
+    _mediator:SendNotification(CSNotificationConst.SHOW_NOTICE, Language.GetContent("publicForbid001"))
+    --TODO
+end
+
+--标记
+function OnMarkBtnClick( obj )
+    _mediator:SendNotification(CSNotificationConst.SHOW_NOTICE, Language.GetContent("publicForbid001"))
+    --TODO
+end
+
+
+--查看按钮
+function OnPreviewBtnClick( obj )
+    _mediator:SendNotification(CSNotificationConst.SHOW_ALLIANCE_BUILDING_DISPLAY_VIEW, _mapBuildingVO)
+end
+
+--侦查按钮
+function OnScoutBtnClick( obj )   
+    if true then
+        _mediator:SendNotification(CSNotificationConst.SHOW_NOTICE, Language.GetContent("publicForbid001"))
+        return
+    end
+    
+    --集结功能就绪
+    --TODO
+    AudioFacade.PlayOnce(AudioNameConst.WORLD_Investigate)
+    local msg = Protocol.CgTroopSetout()
+    msg.TroopJobType = Constant.PsTroopJobType.SCOUT
+    msg.TargetType = Constant.PsDataCategory.ALLIANCE_BUILD --TODO侦查类型参数,等待服务器确定！！！！！！
+    msg.TargetId = _mapBuildingVO.ID
+    msg.TargetX = MapUtils.WorldPosToGlobalPosX(_mapBuildingVO.fx)
+    msg.TargetY = MapUtils.WorldPosToGlobalPosY(_mapBuildingVO.fy)
+
+    -- 逻辑层需要判定用户是否有战争狂热状态
+    if false then --ProxyHelper.buffProxy:HasScoutFanaticalState() ~= true then
+        local hasKey = LuaUnityExtention.HasKey("ScoutNoTip")
+
+        if hasKey == true then
+            local curTime = os.time(os.date("!*t"))
+            local lastTime =   LuaUnityExtention.GetInt("ScoutNoTip")
+            if curTime - lastTime > 24*60*60 then
+                _mediator:SendNotification(CSNotificationConst.SHOW_SCOUT_FANATICALWARSTATETIP, msg)
+            else 
+                _cmCenter:SendMessage(msg)
+            end
+        else--进入这个逻辑，表示没有弹出过战争狂热提示框 ，或者已经取消勾选，允许弹框 
+            _mediator:SendNotification(CSNotificationConst.SHOW_SCOUT_FANATICALWARSTATETIP, msg)
+        end
+    else
+        _cmCenter:SendMessage(msg)
+    end
+    _mediator:HideView()
+end
+
+--增援按钮
+function OnIncreaseBtnClick( obj )
+    _mediator:SendNotification(NotificationConst.SHOW_ALLIANCE_TERRITORY_REINFORE, _mapBuildingVO.id)
+    _mediator:HideView()
+end
+
+--点击集结按钮
+function OnMassBtnClick( obj )
+    ------------------集结屏蔽----------------------
+    if true then
+        _mediator:SendNotification(CSNotificationConst.SHOW_NOTICE, Language.GetContent("publicForbid001"))
+        return
+    end
+    ------------------集结屏蔽----------------------
+
+    if _mapBuildingVO.state == Constant.PsAllianceBuildState.BUILDING then
+        _mediator:SendNotification(CSNotificationConst.SHOW_NOTICE, Language.GetContent("allyTerritory035"))
+        return
+    end
+    --集结功能就绪
+    --TODO
+    if CS.PlayerUserInfo.instance.allianceId == nil then
+        _mediator:SendNotification(CSNotificationConst.SHOW_NOTICE, Language.GetContent("mass029"))
+        return
+    end
+    --有没有联盟大厅
+    if not ProxyHelper.mapProxy.selfCity:HasBuilding(CS.BuildingMeta.GroupId.Castle) then
+        _mediator:SendNotification(CSNotificationConst.SHOW_NOTICE, Language.GetContent("mass061"))
+        return
+    end
+    local tempData = {id = _mapBuildingVO.id, fx=_mapBuildingVO.fx, fy = _mapBuildingVO.fy, type = Constant.PsDataCategory.ALLIANCE_BUILD}
+    _mediator:SendNotification(LuaNotificationConst.SHOW_MASS_TIME_PANEL, tempData)
+    _mediator:HideView()
+end
+
+--点击攻击按钮
+function OnAttackBtnClick()
+    if IsBuildBuilding() then
+        _mediator:SendNotification(CSNotificationConst.SHOW_NOTICE, Language.GetContent("allyTerritory033"))
+        return
+    end
+    local ctx = CS.ArmySetoutContext(Constant.PsTroopJobType.ATTACK, Constant.PsDataCategory.ALLIANCE_BUILD, _mapBuildingVO.id, _mapBuildingVO.fx, _mapBuildingVO.fy)
+    _mediator:SendNotification(CSNotificationConst.EXECUTE_ARMY_PROCESS, ctx)
+    _mediator:HideView()
+end
+
+function OnAfterHideView()
+    _buildEndTime = nil
+    RemoveTime()
+end
+
+---销毁释放
+function OnDestory()
+    if nil ~= _asyncBuildingIcon then
+        _asyncBuildingIcon:Dispose()
+        _asyncBuildingIcon = nil
+    end
+    UIEventListener.Get(goInButton.gameObject).onClick = nil
+    UIEventListener.Get(scoutButton.gameObject).onClick = nil
+    UIEventListener.Get(previewButton.gameObject).onClick = nil
+    UIEventListener.Get(increaseButton.gameObject).onClick = nil
+    UIEventListener.Get(attackButton.gameObject).onClick = nil
+    UIEventListener.Get(chatButton.gameObject).onClick = nil
+    UIEventListener.Get(shareButton.gameObject).onClick = nil
+    UIEventListener.Get(markButton.gameObject).onClick = nil
+end

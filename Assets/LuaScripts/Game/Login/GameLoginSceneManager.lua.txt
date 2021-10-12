@@ -1,0 +1,18 @@
+print('===LUA: GameLoginSceneManager Start... ===')
+
+local BaseLuaUIMediator = CS.BaseLuaUIMediator
+local NotificationConstLua = require('Game/Common/Const/NotificationConst')
+local _mMediator
+
+gGameLoginUIList = {
+    BaseLuaUIMediator('UIScene_Login', NotificationConstLua.SHOW_UISCENE_LOGIN);
+}
+
+
+-- start game login scene ui:uiscene_login
+function OnStartLuaScene(mediatorOwner)
+    print('===LUA: GameLoginSceneManager OnStart... ===');
+    _mMediator = mediatorOwner;
+    _mMediator:SendNotification(NotificationConstLua.SHOW_UISCENE_LOGIN);
+end
+

@@ -1,0 +1,219 @@
+
+local NotificationConst = require('Game/Common/Const/NotificationConst');
+--存放点击的NPC数据对象
+---@type MapNpcVO
+local _npcVo;
+
+local _mediator;
+
+local _lastRemainTime = 0;
+
+local _itemFactory;
+
+local _updater;
+
+--c#类本地化
+local UIEventListener = CS.UIEventListener;
+local Language = CS.Language;
+local NpcTapMenuMediator = CS.NpcTapMenuMediator;
+local ProxyHelper = CS.ProxyHelper;
+local RewardObject = CS.RewardObject;
+local UIUtil = CS.UIUtil;
+local WaitingView = CS.WaitingView;
+local _cmCenter = CS.NetFacade.Instance;
+local MapUtils = CS.MapUtils;
+local MapUtils2 = CS.MapUtils2;
+local GameConfig = CS.GameConfig;
+local UIComponentUtils = CS.UIComponentUtils;
+
+function OnStart()
+    _itemFactory = CS.ItemRendererFactory(
+        function(itemGameObject)
+            return CS.BaseScriptItemRendererViewForLua(itemGameObject);  -- 返回创建的 ItemRender
+        end
+    );
+    grid.itemFactory = _itemFactory;
+    UIEventListener.Get(searchBtn.gameObject).onClick = OnSearchBtnClick;
+    UIEventListener.Get(attackBtn.gameObject).onClick = OnAttackBtnClick;
+    UIEventListener.Get(favoriteBtn.gameObject).onClick = OnFavoriteBtnClick;
+    UIEventListener.Get(massBtn.gameObject).onClick = OnMassBtnClick;
+end
+
+function OnPostCreateView(mediatorOwner, data)
+    _mediator = mediatorOwner;
+    _npcVo = data;
+    if _updater == nil then
+        _updater = CS.UpdateFacade.AddTimeLimitUpdator(1, OnUpdate)
+    end
+end
+
+function OnAfterCreateView(data)
+    _npcVo = data;
+end
+
+function OnAfterHideView()
+end
+
+--
+function OnShowViewAndRefresh(data)
+    _npcVo = data;
+    SetInfo();
+end
+
+--设置界面信息
+function SetInfo()
+    rewardLbl.text = Language.GetContent("monsterInfo001");
+    searchBtn.text = Language.GetContent("monsterBtn002");
+    attackBtn.text = Language.GetContent("monsterBtn001");
+    massBtn.text = Language.GetContent("mass001");
+    local meta = _npcVo.meta;
+    grid.data = RewardObject.ConvertToRewardList(meta.itemIds, meta.itemCounts);
+    searchBtn.gameObject:SetActive(false);
+    attackBtn.gameObject:SetActive(false);
+    massBtn.gameObject:SetActive(false);
+    coordLbl.text = UIUtil.GetCoordinateString(_npcVo.x,_npcVo.y);
+    nameLbl.text = "Lv:" .. tostring(meta.level) .. tostring(meta.name);
+    icon.spriteName = meta.image;
+    tipsLbl.text = Language.GetContent(meta.tips);
+    RefreshTime();
+
+    if meta.type == 5 or meta.type == 6 then
+        --龙血试炼
+        SetBtnState(ProxyHelper.mapProxy.NpcCanAttackLevel);
+        return;
+    end
+    if ProxyHelper.mapProxy.NpcCanAttackLevel == -1 or ProxyHelper.mapProxy.NpcLevelLimit == -1 then
+        NpcTapMenuMediator.SendMapSearchInfo();
+        WaitingView.CreateAndShow();
+    else
+        SetBtnState(ProxyHelper.mapProxy.NpcCanAttackLevel);
+    end
+end
+
+--刷新时间显示
+function OnUpdate()
+    if _lastRemainTime > 0 then
+        RefreshTime()
+    end
+end
+
+--刷新时间
+function RefreshTime()
+    if _npcVo == nil or _lastRemainTime == nil or timeLbl == nil then
+        return;
+    end
+    if GameConfig.serverTime < _npcVo.disappearTime then
+        _lastRemainTime = UIComponentUtils.GenerateTimeInfo(_npcVo.disappearTime,_lastRemainTime,timeLbl);
+    else
+        _lastRemainTime = 0;
+    end
+end
+
+--点击攻击按钮
+---@param go object
+function OnAttackBtnClick(go)
+    NpcTapMenuMediator.OnAttackBtnClick(_npcVo, _mediator);
+end
+
+---点击集结按钮
+function OnMassBtnClick(obj)
+    if CS.PlayerUserInfo.instance.allianceId == nil then
+        _mediator:SendNotification(CS.NotificationConst.SHOW_NOTICE, Language.GetContent("mass029"));
+        return;
+    end
+    --有没有联盟大厅
+    if not ProxyHelper.mapProxy.selfCity:HasBuilding(CS.BuildingMeta.GroupId.Castle) then
+        _mediator:SendNotification(CS.NotificationConst.SHOW_NOTICE, Language.GetContent("mass061"));
+        return;
+    end
+
+    if _npcVo.ownerId ~= 0 then
+        if _npcVo:isBararian() then
+            if _npcVo.ownerId ~= CS.PlayerUserInfo.instance.id then
+                _mediator:SendNotification(CS.NotificationConst.SHOW_NOTICE,Language.GetContent("KingOfBarbariansDes005",_npcVo.name));
+                return;
+            end
+        end
+    end
+
+    local tempData = {id = _npcVo.ID, fx=_npcVo.fx, fy = _npcVo.fy, type = CS.Doomsday.Protocol.Constant.PsDataCategory.Npc};
+    _mediator:SendNotification(NotificationConst.SHOW_MASS_TIME_PANEL, tempData);
+    _mediator:HideView();
+end
+
+--点击收藏按钮
+---@param go object
+function OnFavoriteBtnClick(go)
+    NpcTapMenuMediator.OnFavoriteBtnClick(_npcVo, _mediator);
+end
+
+--点击搜索按钮
+---@param go object
+function OnSearchBtnClick(go)
+    NpcTapMenuMediator.OnSearchBtnClick();
+end
+
+--返回NPC信息回调
+---@param msg object
+function OnGetSearchInfo(msg)
+    WaitingView.Hide();
+    SetBtnState(msg.NpcCanAttackLevel);
+end
+
+--返回搜索结果结果回调
+function OnGetSearchResult(msg)
+    if msg.__isset.x and msg.__isset.y then
+        local worldPos = CS.UnityEngine.Vector3.zero;
+        local outBlockGridX, outBlockGridY = MapUtils.BlockGridPointToBlockGridPos(msg.X, msg.Y);
+    
+        worldPos.x, worldPos.y = MapUtils.BlockGridPosToWorldPos(MapUtils.ServerPosToBlockIndex(msg.ServerPos),outBlockGridX, outBlockGridY);
+        local repairWorldPos = MapUtils2.repairWorldPos(worldPos, msg.X, msg.Y, outBlockGridX, outBlockGridY);
+
+        _mediator:SendNotification(NotificationConst.MOVE_CAMERA_TO_POSITION, repairWorldPos);
+        _mediator:HideView();
+        --因为需要传递object[]类型 暂时放在了c#里
+        NpcTapMenuMediator.OnGetSearchResult(repairWorldPos, _mediator);
+    else
+        _mediator:SendNotification(NotificationConst.SHOW_NOTICE,Language.GetContent("Not found"));
+    end
+end
+
+function SetBtnState(nAttackLevel)
+    if _npcVo.meta.type == 2 then
+        --集结
+        massBtn.gameObject:SetActive(true);
+        attackBtn.gameObject:SetActive(false);
+        searchBtn.gameObject:SetActive(false);
+        return;
+    end
+    if _npcVo.meta.type == 5 then
+        --龙血试炼
+        massBtn.gameObject:SetActive(false);
+        searchBtn.gameObject:SetActive(false);
+        attackBtn.gameObject:SetActive(true);
+        return;
+    end
+    if _npcVo.meta.type == 6 then
+        attackBtn.gameObject:SetActive(false);
+        searchBtn.gameObject:SetActive(false);
+        massBtn.gameObject:SetActive(_npcVo.meta.isAssembly==1);
+        return;
+    end
+    massBtn.gameObject:SetActive(false);
+    attackBtn.gameObject:SetActive(_npcVo.level <= nAttackLevel);
+    searchBtn.gameObject:SetActive(_npcVo.level > nAttackLevel);
+end
+
+function OnDispose()
+    if _updater ~= nil then
+        CS.UpdateFacade.RemoveLimitUpdator(_updater);
+        _updater = nil;
+    end
+    UIEventListener.Get(searchBtn.gameObject).onClick = nil;
+    UIEventListener.Get(attackBtn.gameObject).onClick = nil;
+    UIEventListener.Get(favoriteBtn.gameObject).onClick = nil;
+    if _itemFactory ~= nil then
+        _itemFactory:Dispose();    -- 释放占用的资源
+        _itemFactory = nil;
+    end
+end

@@ -1,0 +1,184 @@
+--- Created by FanXuehui.
+--- DateTime: 2019/11/21
+--- 联盟领地支援界面ItemRenderer实现
+--- AllianceTerritoryReinforePanel.prefab
+
+local UIEventListener = CS.UIEventListener
+local Language = CS.Language
+local NotificationConst = require("Game/Common/Const/NotificationConst")
+local CSNotificationConst = CS.NotificationConst
+local WebTexture = CS.WebTexture
+local BaseUIMediatorForLua = CS.BaseUIMediatorForLua
+
+--设置item需要的数据
+---@type AllianceBuildingCategoryVO
+local tData
+
+--是否展开
+---@type boolean
+local isExpand
+
+--当前item对象
+---@type BaseScriptItemRendererViewForLua
+local tRender
+
+-- 保存itemRender的工厂
+local _itemFactory
+
+---头像
+local myWebTexture
+
+--返回item数据
+function GetData()
+    return tData
+end
+
+--保存item数据
+---@param data PsAllianceBuildTroopInfo
+function SetData(data)
+    tData = data
+    Refresh()
+end
+
+--刷新item
+function Refresh()
+    if nil ~= tData then
+        tRender.viewObject:SetActive(true)
+        Render(tData)
+    else
+        tRender.viewObject:SetActive(false)
+    end
+end
+
+function Render(data)
+    name.text = tData.Name
+    if myWebTexture == nil then
+        myWebTexture = WebTexture(icon)
+    end
+    CS.PlayerInfoUtil.SetHeadToWebTexture(myWebTexture, tData.Head)
+
+    if tData.state == 1 then
+        --行军中
+        arrived.text = Language.GetContent("行军中")
+    else
+        --已到达
+        arrived.text = Language.GetContent("已到达")
+    end
+    troopNum.text = Language.GetContent("mass016") .. ": " .. CalcSoldierNum()
+    SetDragon()
+
+    --自己的部队可以召回
+    if tData.RoleId == CS.PlayerUserInfo.instance.id then
+        recallBtn.gameObject:SetActive(true)
+    else
+        recallBtn.gameObject:SetActive(false)
+    end
+end
+
+---设置龙信息
+function SetDragon()
+    dragonIconF.gameObject:SetActive(false)
+    dragonIconS.gameObject:SetActive(false)
+    local tDragonData = GetDragonData(tData.Dragons)
+    if #tDragonData >= 1 then
+        dragonIconF.gameObject:SetActive(true)
+        local dragon_1 = BaseUIMediatorForLua.GetTableByLuaBehaviour(dragonIconF.gameObject, "")
+        dragon_1:SetDragonInfo(tDragonData[1])
+    end
+    if #tDragonData >= 2 then
+        dragonIconS.gameObject:SetActive(true)
+        local dragon_2 = BaseUIMediatorForLua.GetTableByLuaBehaviour(dragonIconS.gameObject, "")
+        dragon_2:SetDragonInfo(tDragonData[2])
+    end
+end
+
+---获取龙的数据
+function GetDragonData(data)
+    local tDragonMeta = {}
+    for key, value in pairs(data) do
+        local meta = CS.DragonMeta.GetMeta(key)
+        table.insert(tDragonMeta, {meta = meta, level = value})
+    end
+    return tDragonMeta
+end
+
+---计算携带军队总数
+function CalcSoldierNum()
+    local nNum = 0
+    for key, item in pairs(tData.Soldiers) do
+        nNum = nNum + item.Num
+    end
+    return nNum
+end
+
+--创建完item回调
+---@param data BaseScriptItemRenderViewForLua
+function OnPostCreateRender(data)
+    tRender = data
+
+    _itemFactory =
+        CS.ItemRendererFactory(
+        function(itemGameObject)
+            local itemRender = CS.BaseScriptItemRendererViewForLua(itemGameObject)
+            return itemRender -- 返回创建的 ItemRender
+        end
+    )
+
+    grid.itemFactory = _itemFactory
+    grid:onValidateDataComplete("+", OnValidateDataComplete)
+    
+    UIEventListener.Get(recallBtn.gameObject).onClick = OnRecallBtnClick
+end
+
+function OnRecallBtnClick(obj)
+    if tData.State == 1 then
+        --行军中
+        SendNotification(CSNotificationConst.SHOW_ARMY_RECALL_VIEW, tData.TroopId);
+    else
+        --已到达
+        CS.ArmyViewUtils.Return(tData.TroopId)
+    end
+end
+
+function OnValidateDataComplete()
+    grid:Reposition()
+
+    if host ~= nil then
+        host:Reposition()
+    end
+end
+
+function OnDestroy()
+    grid:onValidateDataComplete("-", OnValidateDataComplete)
+    UIEventListener.Get(recallBtn.gameObject).onClick = nil
+
+    if tRender ~= nil then
+        -- body
+        tRender:Dispose()
+        tRender = nil
+    end
+
+    if _itemFactory ~= nil then
+        _itemFactory:Dispose() -- 释放占用的资源
+        _itemFactory = nil
+    end
+end
+
+--显示部队详情
+function ShowTroopDetailView()
+    isExpand = not isExpand
+
+    if isExpand then
+        unfoldBtn.gameObject.transform.localEulerAngles = CS.UnityEngine.Vector3(0, 0, 90)
+        grid.data = tData.Soldiers
+    else
+        unfoldBtn.gameObject.transform.localEulerAngles = CS.UnityEngine.Vector3(0, 0, 0)
+        grid.data = nil
+    end
+
+    grid:Reposition()
+
+    if host ~= nil then
+        host:Reposition()
+    end
+end

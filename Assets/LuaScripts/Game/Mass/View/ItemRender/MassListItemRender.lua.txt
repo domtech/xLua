@@ -1,0 +1,296 @@
+--[[
+集结列表ItemRender
+by: lijunwei
+]]
+
+--C#
+local MapUtils = CS.MapUtils;
+local ProxyHelper = CS.ProxyHelper;
+local PlayerInfoUtil = CS.PlayerInfoUtil;
+local WebTexture = CS.WebTexture;
+local WorkQueueUtils = CS.WorkQueueUtils;
+local UIEventListener = CS.UIEventListener;
+local NetFacade = CS.NetFacade;
+local Protocol = CS.Doomsday.Protocol;
+local Constant = Protocol.Constant
+local CSNotificationConst = CS.NotificationConst;
+local Language = CS.Language;
+local asynParticle;
+
+--设置item需要的数据
+---@type PsAllianceMassInfo
+local tData;
+
+--当前item对象
+---@type BaseScriptItemRendererViewForLua
+local tRender;
+
+local myWebTexture;
+local targetWebTexture;
+local _lastRemainTime = -1;
+local _updater;
+local _startTime;
+---外部调用时隐藏按钮
+local _showBtns = true;
+---确认框
+local _confirmView;
+---进度条文本
+local strPrefix;
+
+local mySuperLinkCordinate;
+local targetSuperLinkCordinate;
+
+
+--返回item数据
+function GetData()
+    return {tData, _startTime};
+end
+
+--保存item数据
+---@param data RewardObject
+function SetData(data)
+    tData = data;
+    Refresh();
+end
+
+--刷新item
+function Refresh()
+    if nil ~= tData then
+        tRender.viewObject:SetActive(true);
+        Render(tData);
+    else
+        tRender.viewObject:SetActive(false);
+    end
+end
+
+---外部调用刷新
+---@param self self 外部调用时默认第一个参数为self
+---@param data PsAllianceMassInfo 集结信息
+function OnlyRefresh(self, data, startTime)
+    tData = data;
+    _startTime = startTime;
+    _showBtns = false;
+    Render(tData);
+end
+
+---刷新显示
+---@param data PsAllianceMassInfo 集结信息
+function Render(data)
+    if myWebTexture == nil then
+        myWebTexture = WebTexture(myIcon);
+    end  
+    if targetWebTexture == nil then
+        targetWebTexture = WebTexture(targetIcon);
+    end
+    if mySuperLinkCordinate == nil then
+        mySuperLinkCordinate = CS.SuperLink(myCoordinate);
+    end
+    if targetSuperLinkCordinate == nil then
+        targetSuperLinkCordinate = CS.SuperLink(targetCoordinate);
+    end
+    PlayParticle();
+    local nDis = math.modf(GetDistance(data.X, data.Y));
+    if nDis > 0 then
+        distance.text = nDis .. "KM";
+        distance.gameObject:SetActive(true);
+    else
+        distance.gameObject:SetActive(false);
+    end
+    
+    PlayerInfoUtil.SetHeadToWebTexture(myWebTexture, data.Icon);
+    local x,y = GetWorldPos(data.X,data.Y);
+    mySuperLinkCordinate.xy = CS.MassListPanelMediator.GetV2Int(x, y);
+    massTeamName.text = data.Name;
+    local _allianceVO = CS.ProxyHelper.allianceProxy:GetMyAllianceVO();
+    allianceName.text = "[" .. _allianceVO.aliasName .. "]";
+
+    local tIconData = GetTargetIconAndName(data);
+    PlayerInfoUtil.SetHeadToWebTexture(targetWebTexture, tIconData[1]);
+    local targetX,targetY = GetWorldPos(data.TargetX,data.TargetY);
+    targetSuperLinkCordinate.xy = CS.MassListPanelMediator.GetV2Int(targetX, targetY);
+    targetName.text = tIconData[2];
+    targetAllianceName.text = (data.TargetType == Constant.PsDataCategory.Npc or data.AllianceName == nil) and "" or "[".. data.AllianceName .. "]";
+    SetJoinBtnState(_showBtns);
+    UpdateNum();
+    InitProgressPanel();
+
+    if _updater == nil then
+        _updater = CS.UpdateFacade.AddTimeLimitUpdator(1, UpdateProgress)
+    end
+end
+
+function DoubleToInt(value)
+    local nVal = math.modf(value);
+    return CS.XLua.Cast.Int32(nVal);
+end
+
+---获取目标头像及名字
+---@param data PsAllianceMassInfo 集结信息
+function GetTargetIconAndName(data)
+    local icon = data.TargetIcon;
+    local name = data.TargetName;
+    if data.TargetType == Constant.PsDataCategory.Npc then
+        local meta = CS.NpcMeta.GetMeta(data.TargetMateId)
+        if meta then
+            name = "Lv" .. meta.level .. " " .. meta.name;
+            icon = meta.icon;
+        end
+    end
+    return {icon, name};
+end
+
+---初始化进度条
+function InitProgressPanel()
+    local progressFront;
+    if tData.MassState == 1 then
+        --准备中
+        progressFront = "jindutiao-lv";
+        strPrefix ="mass008";
+    elseif tData.MassState == 2 then
+        --等待中
+        progressFront = "jindutiao-huang";
+        strPrefix = "mass038";
+    elseif tData.MassState == 3 then
+        --行军中
+        progressFront = "jindutiao-hong";
+        strPrefix = "mass009";
+    else
+        --战斗中
+        progressFront = "jindutiao-hong";
+        strPrefix = "mass039";
+    end
+    front_red.spriteName = progressFront;
+    _lastRemainTime = -1;
+    if _startTime == nil or _showBtns then
+        _startTime = CS.GameConfig.serverTime - (tData.MaxSecond - tData.Second) * 1000;
+    end
+    strPrefix = Language.GetContent(strPrefix);
+    UpdateProgress(strPrefix);
+end
+
+---刷新进度条
+---@param prefix string 倒计时前缀
+function UpdateProgress()
+    if not tData or not _startTime or not _lastRemainTime or not progress then
+        return;
+    end
+    _lastRemainTime = WorkQueueUtils.GenerateTimeInfo(tData.MaxSecond * 1000,
+				tData.MaxSecond * 1000,
+				_startTime,
+				_lastRemainTime,
+				progress.progressLabel, progress.progressBar, CS.TimeUtil.TimeStyle.HHMMSS, strPrefix);
+end
+
+---刷新军队数
+function UpdateNum()
+    massNum.text = tData.CurrSoldiersNum .. "/" .. tData.MaxSoldiersNum;
+end
+
+---计算跟玩家主城距离
+function GetDistance(xValue, yValue)
+    xValue, yValue = GetWorldPos(xValue, yValue);
+    local fDistance = MapUtils.GetWorldPosDistance(ProxyHelper.mapProxy.selfCity.x, ProxyHelper.mapProxy.selfCity.y, xValue, yValue);
+    return fDistance;
+end
+
+---根据地块坐标获取世界坐标
+function GetWorldPos(x, y)
+    local xRes, yRes = MapUtils.BlockGridPosToGlobalGridPos(CS.GameConfig.mapBlockIndex, math.modf(x), math.modf(y));
+    return xRes, yRes;
+end
+
+--创建完item回调
+---@param render BaseScriptItemRenderViewForLua
+function OnPostCreateRender(render)
+    tRender = render;
+end
+
+function OnStart()
+    UIEventListener.Get(joinBtn.gameObject).onClick = OnJoinBtn;
+    UIEventListener.Get(cancelBtn.gameObject).onClick = OnCancelBtn;
+end
+
+---点击加入按钮
+function OnJoinBtn(obj)
+    ConfirmOkHandler();
+end
+
+---确认回调
+function ConfirmOkHandler()
+    local nLimit = tData.MaxSoldiersNum - tData.CurrSoldiersNum;
+    local xW, yW = GetWorldPos(tData.X, tData.Y);
+    local ctx = CS.ArmySetoutContext(Constant.PsTroopJobType.JOIN_RALLY, Constant.PsDataCategory.City, tData.MassPointId, xW, yW, tostring(tData.MassId), nLimit);
+    CS.ApplicationFacade.instance:SendNotification(CSNotificationConst.EXECUTE_ARMY_PROCESS, ctx);
+end
+
+---点击解散按钮
+function OnCancelBtn(obj)
+    _confirmView = CS.ConfirmView.CreateAndShow(Language.GetContent("uiNoticeTitle"),
+                Language.GetContent("mass017"),
+                CS.ConfirmView.ALL);
+    _confirmView:okHandler('+', DissolveMass)
+    
+end
+
+---解散集结
+function DissolveMass()
+    ProxyHelper.massProxy:DissolveMass(tData.MassId);
+end
+
+---设置加入按钮状态
+function SetJoinBtnState(bShowBtns)
+    if tData.MassState == 4 or (not bShowBtns and tData.Name ~= CS.PlayerUserInfo.instance.playerName) then
+        joinBtn.gameObject:SetActive(false);
+        cancelBtn.gameObject:SetActive(false);
+        joinOrCancelLabel.gameObject:SetActive(false);
+        return;
+    end
+    joinOrCancelLabel.gameObject:SetActive(true);
+    if tData.Name == CS.PlayerUserInfo.instance.playerName then
+        joinBtn.gameObject:SetActive(false);
+        cancelBtn.gameObject:SetActive(true);
+        joinOrCancelLabel.text = Language.GetContent("mass010");
+    else
+        local bJoin = ProxyHelper.massProxy:IsInTheMass(tData.MassId) or tData.MassState == 3 or tData.MassState == 4;
+        joinOrCancelLabel.gameObject:SetActive(not bJoin);
+        joinOrCancelLabel.text = Language.GetContent("mass011");
+        joinBtn.gameObject:SetActive(not bJoin);
+        cancelBtn.gameObject:SetActive(false);
+    end
+end
+
+---播放特效
+function PlayParticle()
+    if asynParticle ~= nil then
+        return;
+    end
+    asynParticle = CS.NGUIParticleAsyncPrefab(partical.gameObject.transform, 10);
+    asynParticle.path = "Effects/UI/ui_jiantou";
+end
+
+function OnDestroy()
+    if _updater ~= nil then
+        CS.UpdateFacade.RemoveLimitUpdator(_updater);
+        _updater = nil;
+    end
+    if myWebTexture ~= nil then
+        myWebTexture:Dispose();
+        myWebTexture = nil;
+    end
+    if targetWebTexture ~= nil then
+        targetWebTexture:Dispose();
+        targetWebTexture = nil;
+    end
+    if asynParticle ~= nil then
+        asynParticle:Dispose();
+        asynParticle = nil;
+    end
+    if tRender ~= nil then
+        tRender:Dispose();
+        tRender = nil;
+    end
+    if _confirmView ~= nil then
+        _confirmView:okHandler('-', ConfirmOkHandler);
+        _confirmView:Dispose();
+    end
+end

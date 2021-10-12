@@ -1,0 +1,353 @@
+--C#
+local MapUtils = CS.MapUtils;
+local ProxyHelper = CS.ProxyHelper;
+local PlayerInfoUtil = CS.PlayerInfoUtil;
+local WebTexture = CS.WebTexture;
+local WorkQueueUtils = CS.WorkQueueUtils;
+local BaseUIMediatorForLua = CS.BaseUIMediatorForLua;
+local UIEventListener = CS.UIEventListener;
+local UIComponentUtils = CS.UIComponentUtils;
+local Language = CS.Language
+NotificationConst = require('Game/Common/Const/NotificationConst');
+
+
+
+
+---设置item需要的数据
+---@type EarlyWarningMemberInfoVO
+local tData;
+
+---当前item对象
+---@type BaseScriptItemRendererViewForLua
+local tRender;
+---头像
+local myWebTexture;
+---计时
+local _updater;
+---剩余时间
+local _lastRemainTime = -1;
+
+---创建完item回调
+---@param render BaseScriptItemRenderViewForLua
+function OnPostCreateRender(render)
+    tRender = render;
+    UIEventListener.Get(ignoreBtn.gameObject).onClick = OnIgnoreBtn;
+end
+
+---返回item数据
+function GetData()
+    return tData;
+end
+
+---保存item数据
+---@param data RewardObject
+function SetData(data)
+    tData = data;
+    Refresh();
+end
+
+---刷新item
+function Refresh()
+    if nil ~= tData then
+        tRender.viewObject:SetActive(true);
+        Render();
+    else
+        tRender.viewObject:SetActive(false);
+    end
+end
+
+---刷新显示
+---@param data EarlyWarningMemberInfoVO
+function Render()
+    if myWebTexture == nil then
+        myWebTexture = WebTexture(icon);
+    end
+
+    
+    
+    --判断如果是侦查逻辑，那么直接隐藏折叠按钮
+    if ProxyHelper.earlyWarnProxy:IsScout(tData) == true then
+        unfoldBtn.gameObject:SetActive(false)
+    end
+
+    local num = CalcSoldierNum()
+    if num == 0 then
+        unfoldBtn.gameObject:SetActive(false)
+        name2.gameObject:SetActive(true)
+        name.gameObject:SetActive(false)
+
+        --name2.text = tData.name;
+        SetNameContent(name2)
+    else
+        --显示用户的名称
+        --name.text = tData.name;
+        SetNameContent(name)
+    end
+    
+    ingoreTip.gameObject:SetActive(tData.bIsIngore);
+
+    --设置到达倒计时
+    SetArriveState();
+
+   --设置龙
+    SetDragon();
+    
+    --设置头像
+    PlayerInfoUtil.SetHeadToWebTexture(myWebTexture, tData.icon);
+    
+    --设置攻击类型
+    SetEarlyWarningType ()
+
+    --设置主动方坐标信息
+    SetInitiativePos()
+
+    --设置被动方坐标信息
+    SetPassitivePos()
+end
+
+function SetNameContent(label) 
+    --是否是scout
+    local isScout = ProxyHelper.earlyWarnProxy:IsScout(tData)
+    label.text = ProxyHelper.earlyWarnProxy:GetRightName(tData, isScout)
+end
+
+
+local initiativeSuperLinkCordinate--发送方superlink实例对象
+local passitiveSuperLinkCordinate--被动方superlink实例对象 
+--设置发送方坐标
+function SetInitiativePos()
+    local isShowPos = ProxyHelper.earlyWarnProxy:IsShowEnemyPos(tData)
+
+    if isShowPos == false then
+        initiativeSuperLink.gameObject:SetActive(false)
+        return
+    end
+
+    if initiativeSuperLinkCordinate == nil then
+        initiativeSuperLinkCordinate = CS.SuperLink(initiativeSuperLink);
+    end
+    local xy =  MapUtils.GetGlobalGridPos(tData.StartServerPos, tData.InitiativeX,tData.InitiativeY);
+    initiativeSuperLinkCordinate.xy = xy--CS.MassListPanelMediator.GetV2Int(x, y);
+    initiativeSuperLinkCordinate:SetLabelContentForColon(tData.InitiativeX, tData.InitiativeY)
+end
+
+function SetPassitivePos () 
+    if passitiveSuperLinkCordinate == nil then
+        passitiveSuperLinkCordinate = CS.SuperLink(passitiveSuperLink);
+    end
+    local xy =  MapUtils.GetGlobalGridPos(tData.EndServerPos, tData.PassiveX,tData.PassiveY)
+    passitiveSuperLinkCordinate.xy = xy
+    passitiveSuperLinkCordinate:SetLabelContentForColon(tData.PassiveX, tData.PassiveY)
+    local resType = ProxyHelper.earlyWarnProxy:GetResType(tData.nodeType)
+    if resType == 1 then--城市
+        passitiveSuperLinkCordinate:SetLabelContent(Language.GetContent("mailReportScout056"))
+    elseif resType == 3 then--资源
+        passitiveSuperLinkCordinate:SetLabelContent(Language.GetContent("mass049"))
+    elseif resType == 4 then -- 驻扎军队
+        passitiveSuperLinkCordinate:SetLabelContent(Language.GetContent("mass049"))
+    end
+  
+end
+
+local tResource = {
+        {name = "Mass", bg = "bg_marchingstate_blue",  icon = "icon_assembly_efc"},
+        {name = "Help", bg = "bg_marchingstate_blue",  icon = "icon_help"},
+        {name = "Scout", bg = "bg_marchingstate_red",  icon = "icon_reconnaissance_efc"},
+        {name = "Attack", bg = "bg_marchingstate_red",  icon = "icon_fighting"}}
+        
+--设置攻击类型UI
+function SetEarlyWarningType () 
+    local type = ProxyHelper.earlyWarnProxy:GetEarlyWarningType(tData.type)
+    if type < 1 or type > 4 then
+        --error logic
+        return
+    end
+
+    eWTypeProperty.backImage.spriteName = tResource[type].bg
+    eWTypeProperty.frontImage.spriteName = tResource[type].icon
+end
+local tDragonData
+---设置龙信息
+function SetDragon()
+    local num = CalcSoldierNum()
+    
+    if nil == tData.dragonList  then--无龙逻辑
+        NoDragonLogic(num)
+        return
+    else 
+        tDragonData = GetDragonData(tData.dragonList);
+        if nil == tDragonData then
+            NoDragonLogic(num)
+            return
+        else--有龙
+            HaveDragonLogic(num)
+        end
+    end
+
+end
+
+function NoDragonLogic(num)--无龙逻辑
+    dragonIconS.transform.parent.gameObject:SetActive(false)--关闭dragon父亲游戏对象活性
+    --判断是否有军队
+    SetTroopNum(num, false)
+
+end
+
+function SetTroopNum(num, hasdragon)--设置部队数量信息
+    if num == 0 then
+        --需要关闭部队数量
+        troopNum.gameObject:SetActive(false)
+    else 
+        if hasdragon then
+            troopNum.text = ProxyHelper.earlyWarnProxy:GetTroopNumContent(tData, num)
+        else 
+            troopNum.gameObject:SetActive(false)
+            troopNum2.gameObject:SetActive(true)
+            troopNum2.text = ProxyHelper.earlyWarnProxy:GetTroopNumContent(tData, num)
+        end
+        
+    end
+end
+
+function HaveDragonLogic(num)--有龙逻辑
+
+    local isshowdragon = ProxyHelper.earlyWarnProxy:IsShowDragon(tData)
+    if isshowdragon == false then
+        return
+    end
+    if #tDragonData == 1 then
+        local dragon_1 = BaseUIMediatorForLua.GetTableByLuaBehaviour(dragonIconF.gameObject, "");
+        dragon_1:SetDragonInfo(tDragonData[1]);
+        SetTroopNum(num, true)
+    elseif #tDragonData == 2 then
+        local dragon_1 = BaseUIMediatorForLua.GetTableByLuaBehaviour(dragonIconF.gameObject, "");
+        dragon_1:SetDragonInfo(tDragonData[1]);
+        local dragon_2 = BaseUIMediatorForLua.GetTableByLuaBehaviour(dragonIconS.gameObject, "");
+        dragon_2:SetDragonInfo(tDragonData[2]);
+        SetTroopNum(num, true)
+    end
+end
+
+---获取龙的数据
+function GetDragonData(data)
+    local tDragonMeta = {};
+    for key, value in pairs(data) do
+        table.insert(tDragonMeta, {meta = value.meta, level = value.nLevel});
+    end
+    return tDragonMeta;
+end
+
+---计算携带军队总数
+function CalcSoldierNum()
+    return tData.totalAmount
+end
+
+---设置到达状态
+function SetArriveState()
+
+     local isShowTime = ProxyHelper.earlyWarnProxy:IsShowLastingTime(tData)
+
+     if isShowTime == false then
+        countDown.gameObject:SetActive(false)
+        return
+     end
+
+    if _updater == nil then
+        _lastRemainTime = UIComponentUtils.GenerateTimeInfo(tData.endTime, _lastRemainTime, countDown);
+        _updater = CS.UpdateFacade.AddTimeLimitUpdator(1, UpdateCountDown)
+    end
+
+   
+end
+
+
+function IsShowMassMemberInfos ()
+
+    local isShown = ProxyHelper.earlyWarnProxy:IsShowMassMemberInfos(tData)
+    local num = CalcSoldierNum()
+    if isShown == false or num == 0 then
+        return false
+    end
+
+    return true
+
+end
+
+-- ---设置到达显隐
+-- function SetArriveLabelState(bShow)
+--     arrived.gameObject:SetActive(bShow);
+--     countDown.gameObject:SetActive(not bShow);
+-- end
+
+---设置倒计时显示
+function UpdateCountDown()
+    if not tData or not tData.endTime or countDown == nil then
+        return;
+    end
+    -- if tData.endTime <= CS.GameConfig.serverTime then
+    --     return ProxyHelper.earlyWarnProxy:RemoveMember(tData.troopId);
+    -- end
+    _lastRemainTime = UIComponentUtils.GenerateTimeInfo(tData.endTime, _lastRemainTime, countDown);
+end
+
+function IsScout() 
+    return ProxyHelper.earlyWarnProxy:IsScout(tData)
+end
+---设置展开按钮
+function SetUnfoldBtn(rotaion)
+
+    if ProxyHelper.earlyWarnProxy:IsScout(tData) == true or ProxyHelper.earlyWarnProxy:IsShowUnfoldBtn(tData) == false then
+        unfoldBtn.gameObject:SetActive(false)
+        return
+    end
+
+
+    if unfoldBtn.gameObject.transform.localRotation == rotation then
+        return;
+    end
+    CS.TweenRotation.Begin(unfoldBtn.gameObject, 0.2, CS.UnityEngine.Quaternion.Euler(rotaion)).method = CS.UITweener.Method.EaseInOut;
+end
+
+---重置选中状态
+function Reset(self)
+    SetUnfoldBtn(CS.UnityEngine.Vector3(0,0,90));
+end
+
+---刷新详细信息
+---@param self
+---@param detailPanel 详细信息控件
+function UpdateMember(self, tempPanel)
+    if detailPanel.transform.childCount <= 0 then
+        tempPanel.transform:SetParent(detailPanel.transform);
+    end
+    local rotation = CS.UnityEngine.Vector3(0,0,0);
+    SetUnfoldBtn(rotation);
+end
+
+---获取军队信息
+function GetSoldiers(self)
+    return tData.soldierList;
+end
+
+---
+function GetDetailPanel(self)
+    return detailPanel;
+end
+
+---点击忽略按钮
+function OnIgnoreBtn(obj)
+    ingoreTip.gameObject:SetActive(not ingoreTip.gameObject.activeSelf);
+    ProxyHelper.earlyWarnProxy:IngoreOne(tData.troopId);
+end
+
+function OnDestroy()
+    UIEventListener.Get(ignoreBtn.gameObject).onClick = nil;
+    if _updater ~= nil then
+        CS.UpdateFacade.RemoveLimitUpdator(_updater);
+        _updater = nil;
+    end
+    if tRender ~= nil then
+        tRender:Dispose();
+        tRender = nil;
+    end
+end

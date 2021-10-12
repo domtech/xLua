@@ -1,0 +1,268 @@
+
+--C#
+local UIEventListener = CS.UIEventListener;
+local Language = CS.Language;
+local LuaBehaviour = CS.Game.Lua.LuaBehaviour;
+local _cmCenter = CS.NetFacade.instance;
+local Protocol = CS.Doomsday.Protocol;
+local Constant = Protocol.Constant
+
+local NotificationConst = require('Game/Common/Const/NotificationConst');
+
+local _mediator;
+local _data;
+local _teamData;
+local _itemFactory;
+local _lastRender;
+local _startTime;
+
+function OnPostCreateView(mediator, data)
+    _mediator = mediator;
+    _data = data[1];
+    _startTime = data[2];
+    _mediator:RegisterMessageHandler(Protocol.GcAllianceMassTroopList.Signature, "OnGetAllianceMassTroopList");
+
+    _itemFactory = CS.ItemRendererFactory(
+        function(itemGameObject)
+            return CS.BaseScriptItemRendererViewForLua(itemGameObject);  -- 返回创建的 ItemRender
+        end
+    );
+    memberTable.itemFactory = _itemFactory;
+    memberTable:onItemEvent('+', OnGridItem);
+end
+
+---请求队伍具体信息
+function SendGetTroopListMsg()
+    local msg = Protocol.CgAllianceMassTroopList();
+    msg.MassId = _data.MassId;
+    _cmCenter:SendMessage(msg)
+end
+
+function OnStart()
+    --绑定点击
+    UIEventListener.Get(closeBtn.gameObject).onClick = OnCloseClick;
+    UIEventListener.Get(joinPanel.gameObject).onClick = OnAddBtn;
+    title.text = Language.GetContent("mass014");
+    tipText.text = Language.GetContent("mass012");
+    addTips.text = Language.GetContent("mass015");
+    cannotJoin.text = Language.GetContent("mass045");
+end
+
+---创建完成
+function OnAfterCreateView(data)
+end
+
+---显示刷新
+function OnShowViewAndRefresh(data)
+    _data = data[1];
+    _startTime = data[2];
+    SetJoinBtnState();
+    if _data ~= nil then
+        SetTeamInfo();
+        SendGetTroopListMsg();
+    end
+end
+
+---销毁
+function OnDispose()
+    if _itemFactory ~= nil then
+        _itemFactory:Dispose();
+        _itemFactory = nil;
+    end
+    memberTable:onItemEvent('-', OnGridItem);
+    UIEventListener.Get(closeBtn.gameObject).onClick = nil;
+    UIEventListener.Get(addBtn.gameObject).onClick = nil;
+    _mediator:UnRegisterMessageHandler(Protocol.GcAllianceMassTroopList.Signature);
+end
+
+---点击关闭按钮
+---@param obj GameObject 点击对象
+function OnCloseClick(obj)
+    _mediator:HideView();
+end
+
+---设置集结队伍信息
+function SetTeamInfo()
+    local tMassTeamInfo = LuaBehaviour.GetTableByLuaBehaviour(massTeamInfoRender.gameObject, "");
+    tMassTeamInfo:OnlyRefresh(_data, _startTime);
+end
+
+---接受返回的集结队伍信息
+---@param data GcAllianceMassTroopList 集结队伍信息
+function OnGetAllianceMassTroopList(data)
+    _teamData = data.TroopList;
+    memberTable.data = CS.ProxyHelper.massProxy:GetMemberList(_teamData);
+end
+
+---点击条目
+function OnGridItem(render, eventName, param)
+    if eventName == CS.ItemRendererEventNames.CLICK then
+        _mediator:SendNotification(NotificationConst.ON_SHOW_MASS_MEMBER_DETAIL, render.luaView)
+    end
+end
+
+---显示队伍成员详细信息
+---@param data LuaBehaviourRender
+function OnShowMassMemberDetail(data)
+    ResetLastMember();
+    if _lastRender ~= data:GetLuaTable() then
+        _lastRender = data:GetLuaTable();
+        UpdateMember();
+    else
+        _lastRender = nil;
+    end
+    Reposition();
+end
+
+--重置
+function ResetLastMember()
+    if _lastRender == nil then
+        return;
+    end
+    massMemberDetailPanel:SetActive(false);
+    _lastRender:Reset();
+end
+
+---刷新选中状态
+function UpdateMember()
+    if _lastRender == nil then
+        return;
+    end
+    _lastRender:UpdateMember(massMemberDetailPanel);
+    FillSoldierInfo();
+end
+
+---填充军队信息
+function FillSoldierInfo()
+    local soldiers = _lastRender:GetSoldiers();
+    local detailPanel = _lastRender:GetDetailPanel();
+    ResetGameObject(massMemberDetailPanel);
+    massMemberDetailPanel:SetActive(true);
+    ResetTable();
+    for key, item in pairs(soldiers) do
+        local go = GetOneSoldierObj(key, memList);
+        go:SetActive(true);
+        go.transform:SetParent(troopDetailTable.gameObject.transform);
+        local goLuaTable = LuaBehaviour.GetTableByLuaBehaviour(go, "");
+        --设置士兵信息
+        goLuaTable:SetSoldierInfo(CS.SoldierMeta.GetMeta(item.MetaId), item.Num);
+        ResetGameObject(go);
+    end
+end
+
+---刷新Table
+function Reposition()
+    troopDetailTable:Reposition();
+    memberTable:Reposition();
+end
+
+---获取一个士兵GameObject对象
+---@param key 位置
+---@param memList 已有对象
+function GetOneSoldierObj(key, memList)
+    local trans = troopDetailTable.gameObject.transform;
+    local go = key < trans.childCount and trans:GetChild(key) or nil;
+    if go == nil then
+        go = CS.UnityEngine.GameObject.Instantiate(soliderDetailItemRender);
+    end
+    return go.gameObject;
+end
+
+---重置table
+function ResetTable()
+    local itemList = troopDetailTable:GetChildList();
+    for key, item in pairs(itemList) do
+        item.gameObject:SetActive(false);
+    end
+end
+
+---遣返某个加入者
+---@param troopId long 要踢出的队伍ID
+function OnRemoveMember(troopId)
+    local msg = Protocol.CgAllianceKickOutMass();
+    msg.MassId = _data.MassId;
+    msg.TroopId = troopId;
+    _cmCenter:SendMessage(msg)
+end
+
+---初始化复制的对象
+function ResetGameObject(obj)
+    obj.transform.localPosition = CS.UnityEngine.Vector3.zero;
+    obj.transform.localScale = CS.UnityEngine.Vector3.one;
+end
+
+---设置可加入按钮状态
+function SetJoinBtnState()
+    local hasJoin = CS.ProxyHelper.massProxy:IsInTheMass(_data.MassId) or _data.Name == CS.PlayerUserInfo.instance.playerName;
+    if hasJoin then
+        joinPanel.gameObject:SetActive(false);
+        cannotJoin.gameObject:SetActive(false);
+        ChangeScrollViewSize(1044);
+        contentTable:Reposition();
+    else
+        local bCanJoin = _data.MassState == 1
+        joinPanel.gameObject:SetActive(bCanJoin);
+        cannotJoin.gameObject:SetActive(not bCanJoin);
+        ChangeScrollViewSize(880);
+        contentTable:Reposition();
+        scrollViewArea.gameObject.transform.localPosition = CS.UnityEngine.Vector3(0, -606, 0); --因为table刷新有问题，强制改变一下位置
+    end
+end
+
+---设置滑动大小
+---@param nHeight int 滑动区域高度
+function ChangeScrollViewSize(nHeight)
+    scrollViewArea.height = nHeight;
+    dragArea.size.y = nHeight;
+    memberTable.gameObject.transform.localPosition = CS.UnityEngine.Vector3(0,nHeight/2,0);
+end
+
+---点击加入
+function OnAddBtn(obj)
+    local nLimit = _data.MaxSoldiersNum - _data.CurrSoldiersNum;
+    local xW, yW = GetWorldPos(_data.X, _data.Y);
+    local ctx = CS.ArmySetoutContext(Constant.PsTroopJobType.JOIN_RALLY, Constant.PsDataCategory.City, _data.MassPointId, xW, yW, tostring(_data.MassId), nLimit);
+    CS.ApplicationFacade.instance:SendNotification(CS.NotificationConst.EXECUTE_ARMY_PROCESS, ctx);
+end
+
+---根据地块坐标获取世界坐标
+function GetWorldPos(x, y)
+    local xRes, yRes = CS.MapUtils.BlockGridPosToGlobalGridPos(CS.GameConfig.mapBlockIndex, math.modf(x), math.modf(y));
+    return xRes, yRes;
+end
+
+---隐藏自己
+function HideSelf(massId)
+    if massId == _data.MassId then
+        _mediator:HideView();
+    end
+end
+
+---刷新队伍信息
+---@param value PsAllianceMassTroopInfo
+function OnUpdateMassTeamInfo(value)
+    _teamData:Add(value);
+    memberTable.data = CS.ProxyHelper.massProxy:GetMemberList(_teamData);
+end
+
+---移除一只队伍
+---@param value long 队伍ID
+function OnRemoveOneTeam(value)
+    local nIdx = -1;
+    for i, val in pairs(_teamData) do
+        if val.TroopId == value then
+            nIdx = i;
+        end
+    end
+    if nIdx >= 0 then
+        _teamData:RemoveAt(nIdx);
+    end
+    memberTable.data = CS.ProxyHelper.massProxy:GetMemberList(_teamData);
+end
+
+---刷新单条集结信息
+function OnUpdateOneMass(value)
+    local startTime = CS.GameConfig.serverTime - (value.MaxSecond - value.Second) * 1000;
+    local tMassTeamInfo = LuaBehaviour.GetTableByLuaBehaviour(massTeamInfoRender.gameObject, "");
+    tMassTeamInfo:OnlyRefresh(value, startTime);
+end

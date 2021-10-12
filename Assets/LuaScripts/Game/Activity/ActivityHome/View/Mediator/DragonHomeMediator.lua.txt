@@ -1,0 +1,212 @@
+
+local NotificationConst = CS.NotificationConst
+local UIEventListener = CS.UIEventListener
+local Language = CS.Language
+local EventDelegate = CS.EventDelegate
+local Protocol = CS.Doomsday.Protocol;
+local Color = CS.UnityEngine.Color;
+local GameUtil = CS.GameUtil;
+local ProxyHelper = CS.ProxyHelper
+local PsRankType = CS.Doomsday.Protocol.Constant.PsRankType
+local PsActivityType = CS.PsActivityType
+local CgMapSearchInfo = CS.Doomsday.Protocol.CgMapSearchInfo
+local IntegralRankRender = CS.IntegralRankRender
+local GcRankDataList = CS.GcRankDataList
+local NotificationConstLua = require('Game/Common/Const/NotificationConst')
+
+local netUtil = require('Net/NetUtil');
+require('Protocol/lua_protocol_ttypes') -- 包含消息定义
+
+local _itemFactory  -- 保存itemRender的工厂
+local _itemRankFactory
+local _mediatorOwner -- 保存对应的Mediator
+local _data;
+local list_IntegralRankRender;
+
+---获得活动界面的信息
+---@param data GcAllianceMassTroopList 龙巢界面信息
+function OnGetDragonHomeDataList(data)
+    _teamData = data.TroopList;
+end
+
+-- 同 MonoBehaviour.Start() 函数
+function OnStart()
+    InitItemInfo();
+    UIEventListener.Get(btn1.gameObject).onClick = OnBtnClick1;
+    UIEventListener.Get(btn2.gameObject).onClick = OnBtnClick2;
+    UIEventListener.Get(btn3.gameObject).onClick = OnBtnClick3;
+    UIEventListener.Get(tab1.gameObject).onClick = OnTabClick1;
+    UIEventListener.Get(tab2.gameObject).onClick = OnTabClick2;
+    UIEventListener.Get(tab3.gameObject).onClick = OnTabClick3;
+    UIEventListener.Get(tipBtn.gameObject).onClick = OnTips;
+    SetPage(1)
+    --self:RegisterNotificationHandler(CS.NotificationConst.INTEGRAL_RANK_REQUEST,"ReceiveMsgForSearch");
+
+end
+
+--点击按钮1
+---@param go gameObject
+function OnBtnClick1(go)
+    SendMsgForSearchBoss(1);
+end
+--点击按钮2
+---@param go gameObject
+function OnBtnClick2(go)
+    SendMsgForSearchBoss(2);
+end
+--点击按钮3
+---@param go gameObject
+function OnBtnClick3(go)
+    SendMsgForSearchBoss(3);
+end
+
+--点击Tab1
+---@param go gameObject
+function OnTabClick1(go)
+    SetPage(1)
+end
+--点击按Tab2
+---@param go gameObject
+function OnTabClick2(go)
+    SetPage(2)
+end
+--点击Tab3
+---@param go gameObject
+function OnTabClick3(go)
+    SetPage(3)
+end
+
+--boss活动奖励详情
+function OnTips(go)
+    _introduceContext = CS.ActivityIntroduceMediator.IntroduceContext;
+    _introduceContext.Title =  Language.GetContent("activityBossTipsText01")
+    _introduceContext.TopInfo =  Language.GetContent("activityBossTipsText01")
+    _introduceContext.BottomInfo =  Language.GetContent("activityBossTipsText01")
+    --_mediatorOwner:SendNotification(NotificationConst.SHOW_ACTIVITY_INTRODUCE_POP_PANEL, _introduceContext);
+end
+
+--初始化item信息，例如按钮名字icon显示等
+function InitItemInfo()
+    Title.text = Language.GetContent("DragonNestActivity01");--标题
+    text_Subject.text = Language.GetContent("DragonNestActivity02");--占领者
+    text_Reward.text = Language.GetContent("DragonNestActivity04");--奖励预览
+    btn1.text = Language.GetContent("DragonNestActivity05");--大型龙巢
+    btn2.text = Language.GetContent("DragonNestActivity06");--中型龙巢
+    btn3.text = Language.GetContent("DragonNestActivity07");--小型龙巢
+    text_context.text = Language.GetContentAndNeedReplace("DragonNestActivity08");--详细信息
+    tab1.nameLbl.text = Language.GetContent("DragonNestActivity09");--页签1
+    tab2.nameLbl.text = Language.GetContent("DragonNestActivity10");--页签2
+    tab3.nameLbl.text = Language.GetContent("DragonNestActivity11");--页签3
+
+    initRewardIcon();
+end
+
+--初始化获得物品icon显示
+function initRewardIcon()
+    _itemFactory = CS.ItemRendererFactory(
+        function(itemGameObject)
+            local itemRender = CS.RewardGridRender();
+            itemRender:Replace(itemGameObject);
+            return itemRender;  -- 返回创建的 ItemRender
+        end
+    );
+    Rewardgrid.itemFactory = _itemFactory;
+    --初始化icon显示
+    Rewardgrid.data = CS.ProxyHelper.activityProxy:GetRewardItemInfo();
+end
+
+--初始化获得物品icon显示
+function initRankIcon()
+    _itemRankFactory = CS.ItemRendererFactory(
+        function(itemGameObject)
+            local itemRender = CS.IntegralRankRender();
+            itemRender:Replace(itemGameObject);
+            return itemRender;  -- 返回创建的 ItemRender
+        end
+    );
+    Rankgrid.itemFactory = _itemRankFactory;
+    --初始化icon显示
+    Rankgrid.data = CS.ProxyHelper.activityProxy:GetRewardItemInfo();
+end
+
+function SetPage(index)
+    tab1.icon.spriteName = index == 1 and "biaoqianye-quanping-anxia" or "biaoqianye-quanping-zhengchang";
+    tab2.icon.spriteName = index == 2 and "biaoqianye-quanping-anxia" or "biaoqianye-quanping-zhengchang";
+    tab3.icon.spriteName = index == 3 and "biaoqianye-quanping-anxia" or "biaoqianye-quanping-zhengchang";
+    
+    local DefaultSelect = Color(27 / 255, 44 / 255, 54 / 255);
+    tab1.nameLbl.color = index == 1 and DefaultSelect or Color.white;
+    tab2.nameLbl.color = index == 2 and DefaultSelect or Color.white;
+    tab3.nameLbl.color = index == 3 and DefaultSelect or Color.white;
+    
+    if index == 1 then
+    elseif index == 2 then
+        ProxyHelper.integralRankProxy:SendGetList(PsRankType.DRAGON_NEST);
+    elseif index == 3 then
+        ProxyHelper.integralRankProxy:SendGetList(PsRankType.DRAGON_NEST_ALLIANCE);
+    end
+
+    content1.gameObject:SetActive(index == 1);
+    content2.gameObject:SetActive(index ~= 1);
+
+    if index ~= 1 then
+
+    end
+end
+
+--发送消息获得大中小三种类型的龙巢信息
+function SendMsgForSearchBoss(level)
+    local msg = CgMapSearchInfo()
+    msg.Type = PsActivityType.DRAGON_NEST;
+    msg.Level = level;
+    netUtil.sendToGS(msg);
+
+    --_mediatorOwner:SendMessage(msg)
+end
+
+function ReceiveMsgForSearch(object)
+    print(object)
+    
+end
+
+function ReceiveMsgForRankList(msg)
+    print("object>>>>>>>>>>>>>>>>>>")
+    if object == nil then
+        return;
+    end
+    
+    grid.itemFactory.data =  msg.Members;
+    myScore.text = msg.OwnerValue >0 and msg.OwnerValue or 0;
+
+    if msg.OwnerRank >= 1 and msg.OwnerRank <= 3 then
+        spr.spriteName = "Icon_ranking_0" + msg.OwnerRank;
+    else
+        spr.spriteName = "";
+    end
+
+    rank.text = (msg.OwnerRank == -1 or msg.OwnerRank > 50) and Language.GetContent("rankKing003") or msg.OwnerRank;
+end
+
+function jumpToWorldPos(TargectPos)
+    GameUtil:JumpToCoordinate(TargectPos,true)
+
+end
+
+function UpdatePageInfo(index)
+    local item = CS.IntegralRankRender;
+    grid.data = list_IntegralRankRender;
+end
+
+---C#调用，在界面展示之前回调 
+---@param data object
+function BeforeShowView(data)
+end
+
+--- 由C#调用
+---@param data object
+function OnShowViewNoRefresh(data)
+end
+
+-- 同 MonoBehaviour.OnDestroy() 函数
+function OnDestroy()
+end
